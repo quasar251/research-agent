@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <title>深研 DeepResearch · AI 研究报告工作台</title>
+    <meta name="description" content="深研 DeepResearch：自动检索可信来源并生成带引用的研究报告">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="icon"
+        href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%235b5bd6'/%3E%3Ctext x='32' y='45' font-size='38' text-anchor='middle' fill='%23ffffff' font-family='sans-serif'%3E%E6%B7%B1%3C/text%3E%3C/svg%3E">
+    <link rel="stylesheet" href="/site/styles.css" />
+</head>
+
+<body>
+    <!-- 顶栏 -->
+    <header class="app-header">
+        <div class="brand">
+            <span class="brand-mark">深</span>
+            <span class="brand-text">
+                <strong>深研</strong>
+                <em>DeepResearch</em>
+            </span>
+        </div>
+        <nav class="nav-buttons">
+            <button type="button" id="websocketPanelOpenBtn" class="top-websocket-button" title="查看连接详情">连接</button>
+            <button type="button" id="historyPanelOpenBtn" class="top-history-button" title="查看研究历史">历史</button>
+        </nav>
+    </header>
+
+    <!-- 连接详情抽屉 -->
+    <div class="websocket-panel" id="websocketPanel">
+        <div class="websocket-panel-header">
+            <h3>连接详情</h3>
+            <div class="websocket-panel-actions">
+                <button id="websocketPanelToggle" class="websocket-action-btn" title="收起面板">收起</button>
+            </div>
+        </div>
+        <div class="websocket-status">
+            <div class="status-item">
+                <span class="status-label">已连接时长：</span>
+                <span class="status-value" id="connectionDuration">-</span>
+            </div>
+            <div class="status-item">
+                <span class="status-label">最近活动：</span>
+                <span class="status-value" id="lastActivity">-</span>
+            </div>
+            <div class="status-item">
+                <span class="status-label">连接状态码：</span>
+                <span class="status-value" id="readyState">-</span>
+            </div>
+            <div class="status-item">
+                <span class="status-label">重连次数：</span>
+                <span class="status-value" id="connectionAttempts">0</span>
+            </div>
+        </div>
+    </div>
+
+    <main class="dashboard" id="form">
+        <!-- 概览指标 -->
+        <section class="dash-overview">
+            <div class="stat-card">
+                <span class="stat-label">连接状态</span>
+                <span class="stat-value" id="connectionStatus">已断开</span>
+                <span class="status-indicator" id="connectionIndicator"></span>
+            </div>
+            <div class="stat-card">
+                <span class="stat-label">研究状态</span>
+                <span class="stat-value" id="researchStatus">未运行</span>
+            </div>
+            <div class="stat-card">
+                <span class="stat-label">已接收消息</span>
+                <span class="stat-value" id="messagesReceived">0</span>
+            </div>
+            <div class="stat-card stat-wide">
+                <span class="stat-label">当前任务</span>
+                <span class="stat-value" id="currentTask">-</span>
+            </div>
+        </section>
+
+        <!-- 输入区：任务 + 参数 -->
+        <form method="POST" id="researchForm" class="dash-grid">
+            <div class="card card-task">
+                <div class="card-head">
+                    <h2>研究任务</h2>
+                    <span class="card-tag">第 1 步</span>
+                </div>
+                <div class="card-body">
+                    <label for="task" class="field-label">想让我研究什么？</label>
+                    <textarea id="task" name="task" class="form-control highlight-connection"
+                        placeholder="输入任意主题、问题或想法…" required autocomplete="on"></textarea>
+                    <input type="radio" name="agent" id="autoAgent" value="Auto Agent" checked hidden>
+                    <div class="card-foot">
+                        <button type="button" id="btnShowAuto" class="btn btn-secondary btn-show">自动智能体</button>
+                        <input type="submit" value="开始研究" class="btn btn-primary btn-lg" id="submitButton">
+                    </div>
+                </div>
+            </div>
+
+            <div class="card card-config">
+                <div class="card-head">
+                    <h2>参数配置</h2>
+                    <span class="card-tag">第 2 步</span>
+                </div>
+                <div class="card-body config-grid">
+                    <div class="form-group">
+                        <label for="report_type" class="field-label">报告类型</label>
+                        <select name="report_type" id="report_type" class="form-control highlight-connection" required>
+                            <option value="research_report">摘要 — 简短快速（约 2 分钟）</option>
+                            <option value="detailed_report">详尽 — 深入且更长（约 5 分钟）</option>
+                            <option value="resource_report">资源清单报告</option>
+                            <option value="deep">深度研究</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="tone" class="field-label">语气风格</label>
+                        <select name="tone" id="tone" class="form-control highlight-connection" required>
+                            <option value="Objective">客观 — 中立、不偏不倚地陈述事实与结论</option>
+                            <option value="Formal">正式 — 遵循学术规范，语言与结构严谨</option>
+                            <option value="Analytical">分析 — 对数据与理论进行批判性审视</option>
+                            <option value="Persuasive">说服 — 用论证让读者接受特定观点</option>
+                            <option value="Informative">信息 — 提供清晰而全面的主题信息</option>
+                            <option value="Explanatory">解释 — 阐明复杂概念与过程</option>
+                            <option value="Descriptive">描述 — 细致刻画现象、实验或案例</option>
+                            <option value="Critical">批判 — 评判研究及其结论的有效性与相关性</option>
+                            <option value="Comparative">比较 — 并列不同理论、数据或方法以凸显异同</option>
+                            <option value="Speculative">推演 — 探索假设与未来研究方向的潜在影响</option>
+                            <option value="Reflective">反思 — 回顾研究过程与个人洞见</option>
+                            <option value="Narrative">叙事 — 以讲故事的方式呈现研究发现</option>
+                            <option value="Humorous">幽默 — 轻松有趣，增强可读性</option>
+                            <option value="Optimistic">乐观 — 突出积极发现与潜在收益</option>
+                            <option value="Pessimistic">悲观 — 聚焦局限、挑战与负面结果</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="report_source" class="field-label">信息来源</label>
+                        <select name="report_source" id="report_source" class="form-control highlight-connection"
+                            required>
+                            <option value="web">网络</option>
+                            <option value="local">我的文档</option>
+                            <option value="hybrid">混合</option>
+                            <option value="azure">Azure 存储</option>
+                        </select>
+                        <small class="form-hint">本地研究需先设置 <code>DOC_PATH</code> 环境变量指向文档目录。</small>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="maxSearchResults" class="field-label">每查询抓取网页数</label>
+                        <input type="number" class="form-control highlight-connection" id="maxSearchResults"
+                            name="max_search_results" min="1" max="20" value="5">
+                        <small class="form-hint">控制每个搜索查询抓取的网站数量（默认 5）</small>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="queryDomains" class="field-label">限定域名（可选）</label>
+                        <input type="text" class="form-control highlight-connection" id="queryDomains"
+                            name="query_domains" placeholder="用逗号分隔，如 techcrunch.com, forbes.com"
+                            autocomplete="on">
+                    </div>
+
+                    <!-- MCP 配置 -->
+                    <div class="form-group mcp-group">
+                        <div class="mcp-section">
+                            <div class="mcp-header">
+                                <label for="mcpEnabled" class="form-label mcp-toggle-label">
+                                    <input type="checkbox" id="mcpEnabled" name="mcp_enabled" class="mcp-toggle">
+                                    启用 MCP（模型上下文协议）
+                                </label>
+                                <button type="button" id="mcpInfoBtn" class="mcp-info-btn" title="了解 MCP">说明</button>
+                            </div>
+                            <small class="form-hint">通过 MCP 服务器连接外部工具与数据源</small>
+
+                            <div id="mcpConfigSection" class="mcp-config-section" style="display: none;">
+                                <div class="mcp-presets">
+                                    <label class="form-label">快速预设</label>
+                                    <div class="preset-buttons">
+                                        <button type="button" class="btn btn-outline btn-sm preset-btn"
+                                            data-preset="github">GitHub</button>
+                                        <button type="button" class="btn btn-outline btn-sm preset-btn"
+                                            data-preset="tavily">Tavily 网页搜索</button>
+                                        <button type="button" class="btn btn-outline btn-sm preset-btn"
+                                            data-preset="filesystem">本地文件</button>
+                                    </div>
+                                    <small class="form-hint">点击预设可将预配置的服务器追加到下方 JSON 中</small>
+                                </div>
+
+                                <div class="mcp-config-group">
+                                    <label for="mcpConfig" class="form-label">MCP 服务器配置</label>
+                                    <textarea id="mcpConfig" name="mcp_config" class="form-control mcp-config-textarea"
+                                        rows="8" placeholder="以 JSON 数组形式粘贴 MCP 服务器配置…">[]</textarea>
+                                    <div class="mcp-config-status">
+                                        <span id="mcpConfigStatus" class="mcp-status-text">JSON 有效 ✓</span>
+                                        <button type="button" id="mcpFormatBtn" class="btn btn-sm btn-secondary">格式化
+                                            JSON</button>
+                                    </div>
+                                    <small class="form-hint">
+                                        以 JSON 数组形式粘贴 MCP 服务器配置。每个服务器包含
+                                        <code>name</code>、<code>command</code>、<code>args</code> 及可选的
+                                        <code>env</code> 变量。
+                                        <a href="#" id="mcpExampleLink">查看示例 →</a>
+                                    </small>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </form>
+
+        <!-- 研究进度 -->
+        <section class="card research-output-container">
+            <div class="card-head">
+                <h2>
+                    <span id="modernSpinner" class="modern-spinner"></span>
+                    研究进度
+                </h2>
+                <button id="expandOutputBtn" class="expand-button" title="展开"><i class="expand-mark"
+                        aria-hidden="true"></i></button>
+            </div>
+            <div class="card-body">
+                <p class="section-desc">实时查看 AI 如何搜集信息并分析你的主题。</p>
+                <div id="output"></div>
+            </div>
+        </section>
+
+        <div class="images_div">
+            <div id="selectedImagesContainer" style="display: none;"></div>
+        </div>
+
+        <!-- 研究报告 -->
+        <section class="card report-container">
+            <div class="card-head">
+                <h2>研究报告</h2>
+                <div class="card-tools">
+                    <button id="copyToClipboardTop" class="icon-button" title="复制" style="display: none;">复制</button>
+                    <button id="expandReportBtn" class="expand-button" title="展开"><i class="expand-mark"
+                        aria-hidden="true"></i></button>
+                </div>
+            </div>
+            <div class="card-body">
+                <div class="report-actions" style="display: none;">
+                    <a id="downloadLinkTop" href="#" class="report-action-btn disabled" target="_blank"
+                        rel="noopener noreferrer">PDF</a>
+                    <a id="downloadLinkWordTop" href="#" class="report-action-btn disabled" target="_blank"
+                        rel="noopener noreferrer">Word</a>
+                    <a id="downloadLinkMdTop" href="#" class="report-action-btn disabled" target="_blank"
+                        rel="noopener noreferrer">Markdown</a>
+                    <a id="downloadLinkJsonTop" href="#" class="report-action-btn disabled" target="_blank"
+                        rel="noopener noreferrer">JSON</a>
+                </div>
+                <div id="jsonButtonContainer" class="json-button-container" style="display: none;"></div>
+                <div id="reportContainer"></div>
+                <div id="reportActions" style="display: none;">
+                    <div class="status-note" role="alert" id="status"></div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 报告问答 -->
+        <section class="card chat-container" id="chatContainer" style="display: none;">
+            <div class="card-head">
+                <h2>就本报告提问</h2>
+                <button id="expandChatBtn" class="expand-button" title="展开"><i class="expand-mark"
+                        aria-hidden="true"></i></button>
+            </div>
+            <div class="card-body">
+                <p class="section-desc">针对报告内容继续追问，获取更多洞察。</p>
+                <div id="chatMessages" class="chat-messages"></div>
+                <div class="chat-input-container">
+                    <textarea id="chatInput" class="form-control chat-input" placeholder="就该研究提出一个问题…"
+                        rows="2"></textarea>
+                    <button id="voiceInputBtn" class="btn btn-secondary" title="语音输入">语音</button>
+                    <button id="sendChatBtn" class="btn btn-primary">发送</button>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <!-- 研究历史面板 -->
+    <div class="history-panel" id="historyPanel">
+        <div class="history-panel-header">
+            <h3>研究历史</h3>
+            <div class="history-panel-actions">
+                <button id="historyPanelToggle" class="history-action-btn" title="收起面板">收起</button>
+            </div>
+        </div>
+        <div class="history-panel-search">
+            <input type="text" id="historySearch" placeholder="搜索研究历史…">
+            <button id="historySearchBtn" class="history-action-btn" title="搜索">搜索</button>
+        </div>
+        <div class="history-panel-filters">
+            <select id="historySortOrder">
+                <option value="newest">最新优先</option>
+                <option value="oldest">最早优先</option>
+            </select>
+            <button id="historyClearBtn" class="history-action-btn" title="清空全部历史">清空</button>
+        </div>
+        <div class="history-panel-entries" id="historyEntries"></div>
+    </div>
+
+    <!-- 底部下载栏 -->
+    <div class="sticky-downloads-bar" id="stickyDownloadsBar">
+        <div class="download-buttons-container">
+            <a id="copyToClipboard" class="download-option-btn disabled">复制（Markdown）</a>
+            <a id="downloadLinkMd" href="#" class="download-option-btn disabled" target="_blank"
+                rel="noopener noreferrer">Markdown</a>
+            <a id="downloadLink" href="#" class="download-option-btn disabled" target="_blank" rel="noopener noreferrer">PDF</a>
+            <a id="downloadLinkWord" href="#" class="download-option-btn disabled" target="_blank"
+                rel="noopener noreferrer">Word</a>
+            <a id="downloadLinkJson" href="#" class="download-option-btn disabled" target="_blank"
+                rel="noopener noreferrer">日志（JSON）</a>
+        </div>
+    </div>
+
+    <footer>
+        <p>深研 DeepResearch · 基于开源项目
+            <a target="_blank" href="https://github.com/assafelovic/gpt-researcher">GPT Researcher</a> 构建
+        </p>
+    </footer>
+
+    <script src="/site/vendor/js/showdown.min.js"></script>
+    <script src="/site/vendor/js/purify.min.js"></script>
+    <script src="/site/scripts.js"></script>
+    <script>
+        // 输入框随内容自动增高
+        const taskTextarea = document.getElementById('task');
+        if (taskTextarea) {
+            taskTextarea.setAttribute('style', 'height: 38px; overflow-y: hidden;');
+
+            const resizeTextarea = () => {
+                taskTextarea.style.height = 'auto';
+                taskTextarea.style.height = taskTextarea.scrollHeight + 'px';
+            };
+
+            taskTextarea.addEventListener('input', resizeTextarea);
+            taskTextarea.addEventListener('focus', resizeTextarea);
+        }
+    </script>
+</body>
+
+</html>

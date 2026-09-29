@@ -1,0 +1,89 @@
+{
+  "rows": [
+    {
+      "scenario": "1. LLM retry resilience",
+      "metric": "call success rate (2 transient failures then success)",
+      "baseline": 0.0,
+      "optimized": 100.0,
+      "unit": "%",
+      "higher_is_better": true
+    },
+    {
+      "scenario": "2a. Error classification",
+      "metric": "correct retry decisions",
+      "baseline": 42.9,
+      "optimized": 100.0,
+      "unit": "%",
+      "higher_is_better": true
+    },
+    {
+      "scenario": "2b. Error classification",
+      "metric": "wasted retry attempts on non-retryable errors",
+      "baseline": 8,
+      "optimized": 0,
+      "unit": "attempts",
+      "higher_is_better": false
+    },
+    {
+      "scenario": "3. Availability-first degradation",
+      "metric": "runs delivered when PDF export fails",
+      "baseline": 0.0,
+      "optimized": 100.0,
+      "unit": "%",
+      "higher_is_better": true
+    },
+    {
+      "scenario": "4a. Run log",
+      "metric": "append throughput (1000 appends)",
+      "baseline": 215.4,
+      "optimized": 415.3,
+      "unit": "appends/s",
+      "higher_is_better": true
+    },
+    {
+      "scenario": "4b. Run log",
+      "metric": "retained entries after 5000 appends",
+      "baseline": 5000,
+      "optimized": 495,
+      "unit": "entries",
+      "higher_is_better": false
+    },
+    {
+      "scenario": "5. ReportStore reads",
+      "metric": "get_report throughput (200 reads over 1000 reports)",
+      "baseline": 552.7,
+      "optimized": 89313.6,
+      "unit": "reads/s",
+      "higher_is_better": true
+    },
+    {
+      "scenario": "6a. Context dedupe + budget",
+      "metric": "document characters sent to the LLM",
+      "baseline": 126358,
+      "optimized": 60000,
+      "unit": "chars",
+      "higher_is_better": false
+    },
+    {
+      "scenario": "6b. Context dedupe + budget",
+      "metric": "documents embedded / prompted",
+      "baseline": 42,
+      "optimized": 20,
+      "unit": "docs",
+      "higher_is_better": false
+    },
+    {
+      "scenario": "6c. Context dedupe + budget",
+      "metric": "prompt character reduction",
+      "baseline": 0.0,
+      "optimized": 52.5,
+      "unit": "%",
+      "higher_is_better": true
+    }
+  ],
+  "usage_overhead": {
+    "ns_per_call": 301.4,
+    "us_per_1000_calls": 301.44,
+    "total_tokens_collected": 750000
+  }
+}
