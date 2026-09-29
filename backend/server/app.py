@@ -180,6 +180,28 @@ async def read_report(request: Request, research_id: str):
     return FileResponse(docx_path)
 
 
+@app.get("/api/download/{file_path:path}")
+async def download_report(file_path: str):
+    """Download a generated report file as an attachment.
+
+    The static /outputs mount serves files inline (browsers render Markdown,
+    PDF and JSON in the tab) and the HTML ``download`` attribute is ignored for
+    this cross-origin backend, so downloads need an explicit
+    ``Content-Disposition: attachment`` header.
+    """
+    outputs_root = os.path.abspath("outputs")
+    # FastAPI already URL-decodes the path; accept "task_x.md" or
+    # "outputs/task_x.md" and normalise Windows separators.
+    relative = file_path.replace("\\", "/").lstrip("/")
+    if relative.startswith("outputs/"):
+        relative = relative[len("outputs/"):]
+    absolute = os.path.abspath(os.path.join(outputs_root, relative))
+    # Guard against path traversal: the resolved file must stay inside outputs/.
+    if not absolute.startswith(outputs_root + os.sep) or not os.path.isfile(absolute):
+        raise HTTPException(status_code=404, detail="Report file not found")
+    return FileResponse(absolute, filename=os.path.basename(absolute))
+
+
 # Simplified API routes - no database persistence
 @app.get("/api/reports")
 async def get_all_reports(report_ids: str = None):

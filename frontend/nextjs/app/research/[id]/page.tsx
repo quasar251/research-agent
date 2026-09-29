@@ -470,6 +470,8 @@ export default function ResearchPage({ params }: { params: { id: string } }) {
         chatPromptValue={chatPromptValue}
         setChatPromptValue={setChatPromptValue}
         handleChat={handleChat}
+        handleClickSuggestion={(value: string) => setChatPromptValue(value)}
+        chatBoxSettings={chatBoxSettings}
         isProcessingChat={isProcessingChat}
         onNewResearch={handleNewResearch}
         currentResearchId={currentResearchId || undefined}

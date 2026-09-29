@@ -54,6 +54,7 @@ colorama>=0.4.6
 
 # Output Formats
 md2pdf>=1.0.1
+xhtml2pdf>=0.2.16
 mistune>=3.0.2
 htmldocx>=0.0.6
 

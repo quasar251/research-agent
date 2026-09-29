@@ -1,6 +1,10 @@
-import React, { useRef, useState, useEffect } from "react";
+import React, { useRef, useState, useEffect, useMemo } from "react";
 import { useResearchHistoryContext } from "@/hooks/ResearchHistoryContext";
 import MobileChatPanel from "@/components/mobile/MobileChatPanel";
+import SubQuestions from "@/components/ResearchBlocks/elements/SubQuestions";
+import Sources from "@/components/ResearchBlocks/Sources";
+import AccessReport from "@/components/ResearchBlocks/AccessReport";
+import { preprocessOrderedData } from "@/utils/dataProcessing";
 import { ChatBoxSettings, Data, ChatData, QuestionData, ChatMessage } from "@/types/data";
 import { toast } from "react-hot-toast";
 
@@ -12,6 +16,8 @@ interface MobileResearchContentProps {
   chatPromptValue: string;
   setChatPromptValue: React.Dispatch<React.SetStateAction<string>>;
   handleChat: (message: string) => void;
+  handleClickSuggestion: (value: string) => void;
+  chatBoxSettings: ChatBoxSettings;
   isProcessingChat?: boolean;
   onNewResearch?: () => void;
   currentResearchId?: string;
@@ -26,6 +32,8 @@ export default function MobileResearchContent({
   chatPromptValue,
   setChatPromptValue,
   handleChat: parentHandleChat, // Renamed to clarify it's the parent's handler
+  handleClickSuggestion,
+  chatBoxSettings,
   isProcessingChat: parentIsProcessing = false,
   onNewResearch,
   currentResearchId,
@@ -208,6 +216,47 @@ export default function MobileResearchContent({
   const initialQuestion = localOrderedData.find(data => data.type === 'question');
   const questionText = initialQuestion?.content || '';
 
+  // Build the research artefacts shown above the mobile chat: the reasoning
+  // chain (sub-queries), the sources and the report download links. These used
+  // to be desktop-only; on mobile we now surface them too.
+  const headerContent = useMemo(() => {
+    const groupedData = preprocessOrderedData(localOrderedData);
+    const subqueriesComponent = groupedData.find(data => data.content === 'subqueries');
+    const sourceBlocks = groupedData.filter(data => data.type === 'sourceBlock');
+    const pathData = groupedData.find(data => data.type === 'path');
+
+    const hasContent =
+      subqueriesComponent ||
+      sourceBlocks.length > 0 ||
+      (pathData && pathData.output);
+
+    if (!hasContent) {
+      return null;
+    }
+
+    return (
+      <div className="pb-2">
+        {subqueriesComponent && (
+          <SubQuestions
+            metadata={subqueriesComponent.metadata}
+            handleClickSuggestion={handleClickSuggestion}
+          />
+        )}
+        {sourceBlocks.map((block, index) => (
+          <Sources key={`sourceBlock-${index}`} sources={block.items} />
+        ))}
+        {pathData && pathData.output && (
+          <AccessReport
+            accessData={pathData.output}
+            report={localAnswer}
+            chatBoxSettings={chatBoxSettings}
+            onShareClick={onShareClick}
+          />
+        )}
+      </div>
+    );
+  }, [localOrderedData, localAnswer, chatBoxSettings, handleClickSuggestion, onShareClick]);
+
   return (
     <div className="flex flex-col h-[calc(100vh-3.5rem)] bg-gradient-to-b from-gray-900 to-gray-950">
       {/* Status Bar - Shows when researching or can show share button */}
@@ -260,6 +309,7 @@ export default function MobileResearchContent({
           isProcessingChat={localProcessing}
           isStopped={isStopped}
           onNewResearch={onNewResearch}
+          headerContent={headerContent}
         />
       </div>
       

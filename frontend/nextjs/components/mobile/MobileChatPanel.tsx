@@ -21,6 +21,8 @@ interface MobileChatPanelProps {
   isStopped: boolean;
   onNewResearch?: () => void;
   className?: string;
+  /** Research artefacts (sub-queries, sources, report downloads) shown above the chat. */
+  headerContent?: React.ReactNode;
 }
 
 // Memoize the chat message component to prevent re-rendering all messages
@@ -197,7 +199,8 @@ const MobileChatPanel: React.FC<MobileChatPanelProps> = ({
   isProcessingChat,
   isStopped,
   onNewResearch,
-  className
+  className,
+  headerContent
 }) => {
   const [inputFocused, setInputFocused] = useState(false);
   const [showPreferences, setShowPreferences] = useState(false);
@@ -400,6 +403,9 @@ const MobileChatPanel: React.FC<MobileChatPanelProps> = ({
         ref={chatContainerRef}
         className="flex-1 overflow-y-auto px-3 py-2 space-y-3 custom-scrollbar"
       >
+        {/* Research artefacts (reasoning chain, sources, report downloads) */}
+        {headerContent}
+
         {/* Welcome/Intro message when no content */}
         {showIntroMessage && !loading && (
           <div className="flex items-start space-x-2 py-2 animate-fade-in">

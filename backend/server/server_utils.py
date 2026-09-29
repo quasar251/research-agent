@@ -110,8 +110,10 @@ class Researcher:
         sanitized_filename = sanitize_filename(f"task_{int(time.time())}_{self.query}")
         file_paths = await generate_report_files(report, sanitized_filename)
         
-        # Get the JSON log path that was created by CustomLogsHandler
-        json_relative_path = os.path.relpath(self.logs_handler.log_file)
+        # Get the JSON log path that was created by CustomLogsHandler.
+        # Normalize separators to "/" so the relative path is a valid URL
+        # segment on Windows too (os.path.relpath yields "outputs\\x.json").
+        json_relative_path = os.path.relpath(self.logs_handler.log_file).replace(os.sep, "/")
         
         return {
             "output": {
@@ -181,8 +183,8 @@ async def handle_start_command(websocket, data: str, manager):
     )
     report = str(report)
     file_paths = await generate_report_files(report, sanitized_filename)
-    # Add JSON log path to file_paths
-    file_paths["json"] = os.path.relpath(logs_handler.log_file)
+    # Add JSON log path to file_paths (as a URL-safe path, see above)
+    file_paths["json"] = os.path.relpath(logs_handler.log_file).replace(os.sep, "/")
     await send_file_paths(websocket, file_paths)
 
 

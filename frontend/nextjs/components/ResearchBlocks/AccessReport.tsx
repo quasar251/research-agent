@@ -5,6 +5,7 @@ interface AccessReportProps {
   accessData: {
     pdf?: string;
     docx?: string;
+    md?: string;
     json?: string;
   };
   chatBoxSettings: {
@@ -17,7 +18,7 @@ interface AccessReportProps {
 const AccessReport: React.FC<AccessReportProps> = ({ accessData, chatBoxSettings, report, onShareClick }) => {
   const host = getHost();
 
-  const getReportLink = (dataType: 'pdf' | 'docx' | 'json'): string => {
+  const getReportLink = (dataType: 'pdf' | 'docx' | 'md' | 'json'): string => {
     // Early return if path is not available
     if (!accessData?.[dataType]) {
       console.warn(`No ${dataType} path provided`);
@@ -26,17 +27,22 @@ const AccessReport: React.FC<AccessReportProps> = ({ accessData, chatBoxSettings
 
     const path = accessData[dataType] as string;
     
-    // Clean the path - remove leading/trailing slashes and handle outputs/ prefix
+    // Normalize to URL separators: the backend used to emit Windows-style
+    // paths ("outputs\\report.json") which produced a broken download link.
     const cleanPath = path
       .trim()
-      .replace(/^\/+|\/+$/g, ''); // Remove leading/trailing slashes
+      .replace(/\\/g, '/')            // Backslashes -> forward slashes
+      .replace(/^\/+|\/+$/g, '');     // Remove leading/trailing slashes
     
-    // Only prepend outputs/ if it's not already there
+    // Route through the backend download endpoint so the file is sent with
+    // Content-Disposition: attachment. Hitting the static /outputs URL directly
+    // only renders Markdown/PDF/JSON inline in a new tab, and the `<a download>`
+    // attribute is ignored for this cross-origin backend.
     const finalPath = cleanPath.startsWith('outputs/') 
       ? cleanPath 
       : `outputs/${cleanPath}`;
     
-    return `${host}/${finalPath}`;
+    return `${host}/api/download/${finalPath}`;
   };
 
   // Safety check for accessData
@@ -53,22 +59,18 @@ const AccessReport: React.FC<AccessReportProps> = ({ accessData, chatBoxSettings
           {accessData.pdf && (
             <a 
               href={getReportLink('pdf')} 
-              className="bg-teal-600 text-white font-medium uppercase text-sm px-6 py-3 rounded-lg shadow-md hover:shadow-lg hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-teal-500/50 transform hover:scale-105 transition-all duration-200 flex items-center gap-2"
-              target="_blank"
-              rel="noopener noreferrer">
+              className="bg-teal-600 text-white font-medium uppercase text-sm px-6 py-3 rounded-lg shadow-md hover:shadow-lg hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-teal-500/50 transform hover:scale-105 transition-all duration-200 flex items-center gap-2">
               <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
               </svg>
-              View as PDF
+              Download PDF
             </a>
           )}
           
           {accessData.docx && (
             <a 
               href={getReportLink('docx')} 
-              className="bg-blue-500 text-white font-medium uppercase text-sm px-6 py-3 rounded-lg shadow-md hover:shadow-lg hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-blue-400/50 transform hover:scale-105 transition-all duration-200 flex items-center gap-2"
-              target="_blank"
-              rel="noopener noreferrer">
+              className="bg-blue-500 text-white font-medium uppercase text-sm px-6 py-3 rounded-lg shadow-md hover:shadow-lg hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-blue-400/50 transform hover:scale-105 transition-all duration-200 flex items-center gap-2">
               <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
               </svg>
@@ -76,12 +78,21 @@ const AccessReport: React.FC<AccessReportProps> = ({ accessData, chatBoxSettings
             </a>
           )}
           
+          {accessData.md && (
+            <a 
+              href={getReportLink('md')} 
+              className="bg-emerald-600 text-white font-medium uppercase text-sm px-6 py-3 rounded-lg shadow-md hover:shadow-lg hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-emerald-500/50 transform hover:scale-105 transition-all duration-200 flex items-center gap-2">
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+              </svg>
+              Download Markdown
+            </a>
+          )}
+          
           {chatBoxSettings?.report_type === 'research_report' && accessData.json && (
             <a
               href={getReportLink('json')}
-              className="bg-cyan-600 text-white font-medium uppercase text-sm px-6 py-3 rounded-lg shadow-md hover:shadow-lg hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-cyan-500/50 transform hover:scale-105 transition-all duration-200 flex items-center gap-2"
-              target="_blank"
-              rel="noopener noreferrer">
+              className="bg-cyan-600 text-white font-medium uppercase text-sm px-6 py-3 rounded-lg shadow-md hover:shadow-lg hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-cyan-500/50 transform hover:scale-105 transition-all duration-200 flex items-center gap-2">
               <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z" />
               </svg>
