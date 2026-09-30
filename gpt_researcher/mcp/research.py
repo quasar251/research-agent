@@ -7,6 +7,8 @@ import asyncio
 import logging
 from typing import List, Dict, Any
 
+from ..harness import ToolStuckError, note_tool_failure
+
 logger = logging.getLogger(__name__)
 
 
@@ -132,6 +134,13 @@ class MCPResearchSkill:
                             
                     except Exception as e:
                         logger.error(f"Error executing tool {tool_name}: {e}")
+                        # Same tool + same args + same error repeatedly means the
+                        # MCP server is broken, not flaky — abort the stuck loop.
+                        if note_tool_failure(tool_name, tool_args, str(e)):
+                            raise ToolStuckError(
+                                f"MCP tool '{tool_name}' repeatedly failed with identical "
+                                f"arguments and error ({e}); aborting stuck loop"
+                            ) from e
                         continue
                         
             # Also include the LLM's own analysis/response as a result
@@ -151,6 +160,9 @@ class MCPResearchSkill:
             logger.info(f"Research completed with {len(research_results)} total results")
             return research_results
             
+        except ToolStuckError:
+            # Surface it: the empty-result fallback below would hide the cause.
+            raise
         except Exception as e:
             logger.error(f"Error in LLM research with tools: {e}")
             return []

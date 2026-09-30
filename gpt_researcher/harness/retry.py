@@ -12,7 +12,7 @@ import logging
 from dataclasses import dataclass
 from typing import Awaitable, Callable, TypeVar
 
-from .errors import QuotaExhaustedError, is_retryable
+from .errors import QuotaExhaustedError, classify_exception, is_retryable
 
 logger = logging.getLogger(__name__)
 
@@ -81,6 +81,14 @@ async def async_retry(
         except BaseException as exc:  # noqa: BLE001 - classified below
             last_err = exc
             if attempt >= policy.max_attempts or not is_retryable(exc):
+                # Provider SDKs raise bare 429s with a quota/billing body, which
+                # ``is_retryable`` already reads as quota-exhausted — but only a
+                # classified error lets the caller *pause* rather than report a
+                # generic failure. Re-raise the classified one when it is more
+                # specific; otherwise pass the original through untouched.
+                classified = classify_exception(exc)
+                if isinstance(classified, QuotaExhaustedError) and classified is not exc:
+                    raise classified from exc
                 raise
             delay = policy.delay_for(attempt)
             if on_retry is not None:

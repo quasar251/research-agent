@@ -1,6 +1,8 @@
 from dotenv import load_dotenv
 import logging
 from pathlib import Path
+import os
+
 
 # Create logs directory if it doesn't exist
 logs_dir = Path("logs")

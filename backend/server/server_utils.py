@@ -10,6 +10,7 @@ from fastapi.responses import JSONResponse, FileResponse
 from gpt_researcher.document.document import DocumentLoader
 from gpt_researcher import GPTResearcher
 from gpt_researcher.actions import stream_output
+from gpt_researcher.harness import QuotaExhaustedError
 # This module is imported under two different package names: as
 # `backend.server.server_utils` (main.py / the Procfile entrypoint) and as
 # `server.server_utils` (backend/server/app.py prepends backend/ to sys.path).
@@ -164,6 +165,8 @@ async def handle_start_command(websocket, data: str, manager):
         "report": ""
     })
 
+    # Compute the run id before starting so the harness can isolate its run log,
+    # usage ledger and pause marker under the same id as the output files.
     sanitized_filename = sanitize_filename(f"task_{int(time.time())}_{task}")
 
     report = await manager.start_streaming(
@@ -180,6 +183,7 @@ async def handle_start_command(websocket, data: str, manager):
         mcp_strategy,
         mcp_configs,
         max_search_results,
+        run_id=sanitized_filename,
     )
     report = str(report)
     file_paths = await generate_report_files(report, sanitized_filename)
@@ -344,6 +348,23 @@ async def handle_websocket_communication(websocket, manager):
             except asyncio.CancelledError:
                 logger.info("Task cancelled.")
                 raise
+            except QuotaExhaustedError as e:
+                # Not a crash: the account is out of quota, so the run is
+                # *paused*. The harness already persisted a pause marker; tell
+                # the client what happened and what recovers it, instead of
+                # surfacing an opaque provider error.
+                logger.warning(f"Research paused on quota exhaustion: {e}")
+                await websocket.send_json(
+                    {
+                        "type": "logs",
+                        "content": "paused",
+                        "output": (
+                            "LLM 额度已耗尽，本次研究已暂停（未产出报告）。"
+                            "额度恢复后请重新发起同一条查询；"
+                            "暂停标记已保存到 data/paused/ 下。"
+                        ),
+                    }
+                )
             except Exception as e:
                 logger.error(f"Error running task: {e}\n{traceback.format_exc()}")
                 await websocket.send_json(

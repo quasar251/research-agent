@@ -12,6 +12,11 @@ This module ports both, plus an *availability-first* twist: when a stage is
 marked as non-critical, exhausting retries yields a **degraded** result instead
 of an exception, so auxiliary work (charts, PDF export, ledger files) can fail
 without sinking the whole run.
+
+Where xhs persisted progress into a resumable ``state``, the parts that transfer
+to gpt-researcher's stateless pipeline are: per-stage usage written to a ledger
+(:mod:`gpt_researcher.harness.usage`) and a quota-exhaustion pause marker
+(:mod:`gpt_researcher.harness.pause`) — both keyed by ``run_id``.
 """
 
 from __future__ import annotations
@@ -24,8 +29,10 @@ from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable, Iterator, TypeVar
 
 from .errors import QuotaExhaustedError
+from .pause import mark_paused
 from .retry import RetryPolicy, async_retry
 from .run_log import RunLog
+from .usage import record_usage
 
 logger = logging.getLogger(__name__)
 
@@ -143,11 +150,19 @@ def report_usage(usage: dict[str, Any] | None) -> None:
 
 
 @contextmanager
-def collect_stage() -> Iterator[UsageCollector]:
+def collect_stage(
+    stage: str | None = None,
+    run_id: str | None = None,
+) -> Iterator[UsageCollector]:
     """Collect token usage for the duration of the block.
 
     Nested blocks each get their own collector, so an inner scope is never
     double-counted into the outer one.
+
+    When both ``stage`` and ``run_id`` are given, whatever was accumulated is
+    persisted on exit — including when the block raises, so a stage that died
+    mid-way still reports what it spent. Callers without a run id (benchmarks,
+    ad-hoc invocations) leave ``run_id`` unset and nothing is written.
     """
     collector = UsageCollector()
     token = _current_collector.set(collector)
@@ -155,6 +170,8 @@ def collect_stage() -> Iterator[UsageCollector]:
         yield collector
     finally:
         _current_collector.reset(token)
+        if stage and run_id:
+            record_usage(run_id, stage, collector.as_dict())
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -171,11 +188,12 @@ async def run_stage(
     critical: bool = True,
     default: T | None = None,
     sleep: Callable[[float], Awaitable[None]] | None = None,
+    run_id: str | None = None,
 ) -> StageResult:
-    """Run one stage with retry, timing, logging and optional degradation.
+    """Run one stage with retry, timing, logging, usage capture and degradation.
 
     Args:
-        name: Stage label used in the run log.
+        name: Stage label used in the run log and the usage ledger.
         fn: Zero-arg coroutine factory (re-invoked on each attempt).
         policy: Retry tuning; defaults to :class:`RetryPolicy`.
         run_log: Optional :class:`RunLog` to record stage transitions.
@@ -186,6 +204,8 @@ async def run_stage(
         default: Value returned in ``StageResult.value`` when a non-critical
             stage degrades.
         sleep: Injectable sleep for tests.
+        run_id: When set, this stage's token usage is persisted to the usage
+            ledger and a quota exhaustion writes a pause marker for the run.
 
     Returns:
         A :class:`StageResult`. Raises only for a critical stage's terminal
@@ -193,6 +213,8 @@ async def run_stage(
     """
     started = time.perf_counter()
     attempts = 0
+    usage_dict: dict[str, int] = {}
+    collector: UsageCollector | None = None
 
     def _on_retry(attempt: int, exc: BaseException, delay: float) -> None:
         if run_log is not None:
@@ -207,9 +229,8 @@ async def run_stage(
         else:
             logger.warning("Stage %s attempt %d failed (%s)", name, attempt, exc)
 
-    usage_dict: dict[str, int] = {}
     try:
-        with collect_stage() as collector:
+        with collect_stage(name, run_id) as collector:
             async def _attempt() -> T:
                 nonlocal attempts
                 attempts += 1
@@ -221,6 +242,9 @@ async def run_stage(
             usage_dict = collector.as_dict()
     except QuotaExhaustedError as exc:
         duration = time.perf_counter() - started
+        usage_dict = collector.as_dict() if collector is not None else {}
+        if run_id:
+            mark_paused(run_id, name, str(exc))
         if run_log is not None:
             run_log.append(
                 f"stage paused: {name}",
@@ -228,6 +252,7 @@ async def run_stage(
                 status=STATUS_PAUSED,
                 duration=round(duration, 3),
                 error=str(exc),
+                **usage_dict,
             )
         result = StageResult(
             name=name,
@@ -235,12 +260,14 @@ async def run_stage(
             error=str(exc),
             attempts=attempts,
             duration=duration,
+            usage=usage_dict,
         )
         if critical:
             raise
         return result
     except Exception as exc:  # noqa: BLE001 - terminal failure path
         duration = time.perf_counter() - started
+        usage_dict = collector.as_dict() if collector is not None else {}
         if run_log is not None:
             run_log.append(
                 f"stage failed: {name}",
@@ -248,6 +275,7 @@ async def run_stage(
                 status=STATUS_FAILED,
                 duration=round(duration, 3),
                 error=str(exc),
+                **usage_dict,
             )
         result = StageResult(
             name=name,
@@ -255,6 +283,7 @@ async def run_stage(
             error=str(exc),
             attempts=attempts,
             duration=duration,
+            usage=usage_dict,
         )
         if critical:
             raise
@@ -266,6 +295,7 @@ async def run_stage(
                 status=STATUS_DEGRADED,
                 duration=round(duration, 3),
                 error=str(exc),
+                **usage_dict,
             )
         return StageResult(
             name=name,
@@ -274,6 +304,7 @@ async def run_stage(
             error=str(exc),
             attempts=attempts,
             duration=duration,
+            usage=usage_dict,
         )
 
     duration = time.perf_counter() - started

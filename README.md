@@ -74,6 +74,7 @@ Research Agent 会针对任意给定任务，自动完成**规划 → 检索 →
 ┌──────────────────────────────────────────────────────────────┐
 │                  后端 Backend (FastAPI)                       │
 │  backend/server/app.py                                        │
+│  （harness 接入：websocket_manager.py / server_utils.py）     │
 │  ├─ /ws                WebSocket，研究任务主通道              │
 │  ├─ /report/           发起研究                               │
 │  ├─ /api/reports*      历史记录 CRUD / 追问                   │
@@ -85,8 +86,17 @@ Research Agent 会针对任意给定任务，自动完成**规划 → 检索 →
 ┌──────────────────────────────────────────────────────────────┐
 │               核心库 gpt_researcher（研究引擎）               │
 │  agent.py → skills/* → retrievers/* → scraper/*               │
-│  context/* 上下文过滤 · harness/* 阶段与重试 · llm_provider/* │
+│  context/* 上下文过滤 · llm_provider/* 模型适配               │
 └──────────────────────────────────────────────────────────────┘
+
+横切的 harness/ 韧性 & 可观测层（包装后端与核心库的阶段执行）
+  ├─ errors    错误分类（瞬时 / 致命 / 配额耗尽）
+  ├─ retry     指数退避重试；429 配额耗尽归类后立即上抛
+  ├─ stage     阶段包装 run_stage：重试 + 降级交付 + 用量采集
+  ├─ run_log   按 run 隔离的 JSONL 运行日志（data/run_logs/{run_id}.jsonl）
+  ├─ usage     token 用量账本（data/usage.jsonl）
+  ├─ pause     配额耗尽暂停标记（data/paused/{run_id}.json）
+  └─ stuck     工具层卡死检测（同工具同参数重复错误即中止）
 ```
 
 ### 一次研究的完整数据流
@@ -109,11 +119,11 @@ research-agent/
 ├── main.py                    # 后端启动入口（FastAPI + uvicorn）
 ├── backend/                   # 后端应用层
 │   ├── server/
-│   │   ├── app.py             # FastAPI 应用与全部路由
+│   │   ├── app.py             # FastAPI 应用与全部路由（导出降级走 harness）
 │   │   ├── report_store.py    # 报告持久化（JSON 落盘）
-│   │   ├── server_utils.py    # 研究执行、格式导出等工具
+│   │   ├── server_utils.py    # 研究执行、格式导出等工具（额度耗尽暂停提示）
 │   │   ├── multi_agent_runner.py
-│   │   └── websocket_manager.py
+│   │   └── websocket_manager.py  # 研究主流程 + harness 包装（run_id / 卡死守卫）
 │   ├── report_type/           # basic_report / detailed_report / deep_research
 │   ├── chat/                  # 报告追问对话
 │   ├── memory/                # 研究草稿与上下文记忆
@@ -127,7 +137,14 @@ research-agent/
 │   ├── context/               # 上下文过滤与压缩
 │   ├── llm_provider/          # 各 LLM 提供商适配
 │   ├── mcp/                   # MCP 客户端与服务端
-│   ├── harness/               # 阶段编排、重试、运行日志
+│   ├── harness/               # 韧性 & 可观测层
+│   │   ├── errors.py          # LLM 错误分类（瞬时 / 致命 / 配额耗尽）
+│   │   ├── retry.py           # 指数退避重试（配额耗尽归类后立即上抛）
+│   │   ├── stage.py           # 阶段包装器（重试 + 降级交付 + 用量采集）
+│   │   ├── run_log.py         # 按 run 隔离的 JSONL 运行日志
+│   │   ├── usage.py           # token 用量账本
+│   │   ├── pause.py           # 配额耗尽暂停标记
+│   │   └── stuck.py           # 工具层卡死检测
 │   ├── config/                # 配置与默认变量
 │   └── vector_store/          # 向量存储适配
 ├── frontend/
@@ -138,7 +155,7 @@ research-agent/
 ├── evals/                     # 质量 / 幻觉 / 上下文过滤评估
 ├── docs/                      # Docusaurus 文档站
 ├── outputs/                   # 生成的研究报告（运行时产物）
-├── data/                      # 报告与运行日志（reports.json / run_log.jsonl）
+├── data/                      # 报告与运行数据（reports.json / run_logs/ / usage.jsonl / paused/）
 ├── tests/                     # 测试
 ├── docker-compose.yml
 ├── Dockerfile                 # 后端镜像
@@ -281,6 +298,37 @@ NEXT_PUBLIC_GPTR_API_URL=http://localhost:8010
 
 6. **持久化层精简**
    移除 MongoDB 相关服务，报告统一由 `ReportStore` 落盘为 JSON（`data/reports.json`）。
+
+7. **Harness 韧性 / 可观测层（`gpt_researcher/harness/`）**
+   上游研究管线缺少失败重试与运行留痕能力。本项目参考 **research-agent-xhs（溯光）**
+   的五层 Harness 设计，**选择性移植**其中与 gpt-researcher 契合的原语，并对
+   xhs 依赖可续跑状态机、无法直接照搬的部分做了等价改写（xhs 借 `state.json`
+   做断点续跑，而本项目 `researcher.run()` 会累积上下文，重放等于重复研究）：
+
+   - `errors` —— LLM 错误分类（瞬时 / 致命 / 配额耗尽）
+   - `retry` —— 带错误分类的指数退避重试；原始 429「配额耗尽」会被归类为
+     `QuotaExhaustedError` 立即上抛，不再无谓重试
+   - `stage` —— 阶段包装器 `run_stage`：重试 + **降级交付**（标记为非关键的阶段
+     在耗尽重试后返回 `degraded` 结果而非抛异常，例如图表 / PDF 导出失败
+     不会拖垮整次研究）+ 逐阶段 token 采集
+   - `run_log` —— 有界、仅追加的 JSONL 运行日志，**按 run 隔离**写入
+     `data/run_logs/{run_id}.jsonl`（可用 `RUN_LOG_DIR` / `RUN_LOG_PATH` 覆盖），
+     超过 `MAX_ENTRIES` 的 4 倍时自动压缩
+   - `usage` —— token 用量账本 `data/usage.jsonl`（可用 `USAGE_LOG_PATH` 覆盖）：
+     每个阶段结束（含异常退出）落一条记录，`read_usage` / `sum_usage` 可按 run
+     回读与聚合（xhs 把用量折回 `state`，此处改为独立账本）
+   - `pause` —— 配额耗尽暂停标记 `data/paused/{run_id}.json`（可用 `PAUSE_DIR`
+     覆盖）：本项目无状态机、不支持断点续跑，故不做「从第 N 步恢复」，而是把
+     额度耗尽明确标记为 **paused** 并给出续跑指引；重跑同一查询前会清除标记
+   - `stuck` —— 工具层卡死检测：同一 `(工具, 参数, 错误)` 三连重复达阈值（默认 3 次）
+     即抛 `ToolStuckError` 中止，避免坏工具（失效 Key、不可达 MCP 服务）在长跑中
+     反复烧 token
+
+   接入点：`backend/server/websocket_manager.py` 用它包装研究主流程、安装卡死守卫
+   并记录 `run started` 等事件；`backend/server/server_utils.py` 在额度耗尽时向前端
+   推送 `paused` 提示（解决服务重启后内存任务状态丢失、无法排查的问题）；
+   `backend/server/app.py` 用它包装 DOCX / PDF 导出；`gpt_researcher/utils/tools.py`
+   与 `gpt_researcher/mcp/research.py` 在两处工具循环里上报失败；`benchmarks/` 亦复用。
 
 ---
 

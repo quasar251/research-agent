@@ -172,10 +172,12 @@ def is_retryable(exc: BaseException) -> bool:
     """True when the classified error is worth retrying.
 
     ``QuotaExhaustedError`` is explicitly excluded even though it derives from
-    the retryable ``RateLimitError``.
+    the retryable ``RateLimitError``. Raw provider 429s are classified first so
+    a quota-exhausted body is likewise treated as terminal rather than retried.
     """
     if isinstance(exc, QuotaExhaustedError):
         return False
-    if isinstance(exc, LLMError):
-        return exc.retryable
-    return classify_exception(exc).retryable
+    classified = exc if isinstance(exc, LLMError) else classify_exception(exc)
+    if isinstance(classified, QuotaExhaustedError):
+        return False
+    return classified.retryable

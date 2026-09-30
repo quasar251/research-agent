@@ -366,7 +366,8 @@ async def write_report(research_request: ResearchRequest, research_id: str = Non
         headers=research_request.headers,
         query_domains=[],
         config_path="",
-        return_researcher=True
+        return_researcher=True,
+        run_id=research_id,
     )
 
     # Auxiliary artefacts: the docx/pdf export engines are heavyweight and can

@@ -6,6 +6,11 @@ wipes the trail needed to diagnose a failed run. This appends one JSON object
 per line to a project log file — JSONL rather than a JSON array so appending
 never requires reading and rewriting the whole file.
 
+Like xhs, logs are isolated **per run**: a run's trail lives in its own file
+under ``data/run_logs/`` (see :func:`run_log_path`) so one task can be read back
+without sifting through unrelated runs. Set ``RUN_LOG_PATH`` to force a single
+shared file instead.
+
 Writes are best-effort: the run log is auxiliary, so an ``OSError`` must never
 abort research.
 """
@@ -15,18 +20,55 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 logger = logging.getLogger(__name__)
 
-__all__ = ["RunLog"]
+__all__ = ["RunLog", "run_log_path", "run_log_for"]
 
 #: Default cap on entries read back / retained after compaction.
 DEFAULT_MAX_ENTRIES = 300
 #: Compaction triggers once the file holds this multiple of ``max_entries``.
 _COMPACT_FACTOR = 4
+
+#: Fallback used when no run id is known (benchmarks, ad-hoc callers).
+DEFAULT_RUN_LOG_PATH = os.path.join("data", "run_log.jsonl")
+#: Directory holding one log file per run.
+DEFAULT_RUN_LOG_DIR = os.path.join("data", "run_logs")
+
+
+def _safe_segment(value: str) -> str:
+    """Reduce a run id to a filesystem-safe single path segment."""
+    return re.sub(r"[^\w.-]", "_", str(value)).strip("_")[:120] or "run"
+
+
+def run_log_path(run_id: str | None = None) -> Path:
+    """Resolve the log file for a run.
+
+    Precedence: ``RUN_LOG_PATH`` (explicit single-file override) >
+    ``RUN_LOG_DIR/<run_id>.jsonl`` (per-run isolation) >
+    ``data/run_log.jsonl`` (shared fallback).
+    """
+    override = os.getenv("RUN_LOG_PATH")
+    if override:
+        return Path(override)
+    if run_id:
+        directory = os.getenv("RUN_LOG_DIR", DEFAULT_RUN_LOG_DIR)
+        return Path(directory) / f"{_safe_segment(run_id)}.jsonl"
+    return Path(DEFAULT_RUN_LOG_PATH)
+
+
+def run_log_for(
+    run_id: str | None = None,
+    *,
+    max_entries: int = DEFAULT_MAX_ENTRIES,
+    enabled: bool = True,
+) -> RunLog:
+    """Build the :class:`RunLog` for ``run_id`` (see :func:`run_log_path`)."""
+    return RunLog(run_log_path(run_id), max_entries=max_entries, enabled=enabled)
 
 
 class RunLog:

@@ -13,7 +13,14 @@ from backend.report_type import BasicReport, DetailedReport
 
 from gpt_researcher.utils.enum import ReportType, Tone
 from gpt_researcher.actions import stream_output  # Import stream_output
-from gpt_researcher.harness import RetryPolicy, RunLog, run_stage
+from gpt_researcher.harness import (
+    RetryPolicy,
+    StuckDetector,
+    clear_paused,
+    guard_against_stuck,
+    run_log_for,
+    run_stage,
+)
 from .multi_agent_runner import run_multi_agent_task
 from .server_utils import CustomLogsHandler
 
@@ -99,7 +106,7 @@ class WebSocketManager:
             except Exception:
                 pass  # If this fails too, there's nothing more we can do
 
-    async def start_streaming(self, task, report_type, report_source, source_urls, document_urls, tone, websocket, headers=None, query_domains=[], mcp_enabled=False, mcp_strategy="fast", mcp_configs=[], max_search_results=None):
+    async def start_streaming(self, task, report_type, report_source, source_urls, document_urls, tone, websocket, headers=None, query_domains=[], mcp_enabled=False, mcp_strategy="fast", mcp_configs=[], max_search_results=None, run_id=None):
         """Start streaming the output."""
         tone = Tone[tone]
         # add customized JSON config file path here
@@ -110,32 +117,44 @@ class WebSocketManager:
             task, report_type, report_source, source_urls, document_urls, tone, websocket, 
             headers=headers, query_domains=query_domains, config_path=config_path,
             mcp_enabled=mcp_enabled, mcp_strategy=mcp_strategy, mcp_configs=mcp_configs,
-            max_search_results=max_search_results
+            max_search_results=max_search_results, run_id=run_id
         )
         return report
 
-async def _run_research_stage(researcher, task: str, report_type: str) -> str:
+async def _run_research_stage(researcher, task: str, report_type: str, run_id: str | None = None) -> str:
     """Run the research pipeline through the harness stage wrapper.
 
     Retry lives at the LLM-call granularity (see ``GenericLLMProvider``), not
     here: ``researcher.run()`` mutates accumulated context, so blindly re-running
     the whole pipeline would duplicate research and double cost. This wrapper
-    instead adds a bounded, restart-surviving run log plus timing and
-    quota-exhaustion classification, so a failed run can be diagnosed after the
-    in-memory job state is gone.
+    instead adds what *does* survive a restart — a per-run log, per-stage token
+    usage, quota-pause markers and a stuck-tool guard — so a failed run can be
+    diagnosed (and a paused one recognised) after the in-memory job state is
+    gone.
     """
-    run_log = RunLog(os.getenv("RUN_LOG_PATH", os.path.join("data", "run_log.jsonl")))
+    run_log = run_log_for(run_id)
+    if run_id:
+        # A fresh attempt supersedes any stale quota pause from a previous try.
+        clear_paused(run_id)
     run_log.append(f"run started: {task}", stage="start", report_type=report_type)
+
+    async def _research():
+        # Run-scoped stuck guard: the same tool failing identically across
+        # sub-queries aborts the run instead of burning tokens in a loop.
+        with guard_against_stuck(StuckDetector()):
+            return await researcher.run()
+
     result = await run_stage(
         f"research:{report_type}",
-        researcher.run,
+        _research,
         policy=RetryPolicy(max_attempts=1),
         run_log=run_log,
+        run_id=run_id,
     )
     return result.value
 
 
-async def run_agent(task, report_type, report_source, source_urls, document_urls, tone: Tone, websocket, stream_output=stream_output, headers=None, query_domains=[], config_path="", return_researcher=False, mcp_enabled=False, mcp_strategy="fast", mcp_configs=[], max_search_results=None):
+async def run_agent(task, report_type, report_source, source_urls, document_urls, tone: Tone, websocket, stream_output=stream_output, headers=None, query_domains=[], config_path="", return_researcher=False, mcp_enabled=False, mcp_strategy="fast", mcp_configs=[], max_search_results=None, run_id=None):
     """Run the agent."""    
     # Create logs handler for this research task
     logs_handler = CustomLogsHandler(websocket, task)
@@ -179,7 +198,7 @@ async def run_agent(task, report_type, report_source, source_urls, document_urls
             mcp_strategy=mcp_strategy if mcp_enabled else None,
             max_search_results=max_search_results,
         )
-        report = await _run_research_stage(researcher, task, report_type)
+        report = await _run_research_stage(researcher, task, report_type, run_id)
 
     else:
         researcher = BasicReport(
@@ -197,7 +216,7 @@ async def run_agent(task, report_type, report_source, source_urls, document_urls
             mcp_strategy=mcp_strategy if mcp_enabled else None,
             max_search_results=max_search_results,
         )
-        report = await _run_research_stage(researcher, task, report_type)
+        report = await _run_research_stage(researcher, task, report_type, run_id)
 
     if report_type != "multi_agents" and return_researcher:
         return report, researcher.gpt_researcher

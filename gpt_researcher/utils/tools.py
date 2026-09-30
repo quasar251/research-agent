@@ -14,6 +14,7 @@ from langchain_core.tools import tool
 
 from .costs import calculate_llm_cost
 from .llm import create_chat_completion
+from ..harness import ToolStuckError, note_tool_failure
 
 logger = logging.getLogger(__name__)
 
@@ -161,6 +162,14 @@ async def create_chat_completion_with_tools(
                                 f"Error executing tool '{tool_name}': {error_type}: {error_msg}",
                                 exc_info=True
                             )
+                            # Same tool + same args + same error, over and over,
+                            # is a stuck loop rather than a transient blip —
+                            # abort instead of letting the run spin.
+                            if note_tool_failure(tool_name, tool_args, error_msg):
+                                raise ToolStuckError(
+                                    f"tool '{tool_name}' repeatedly failed with identical "
+                                    f"arguments and error ({error_msg}); aborting stuck loop"
+                                ) from e
                             # Provide user-friendly error message
                             if "timeout" in error_msg.lower() or "timed out" in error_msg.lower():
                                 tool_result = f"Tool '{tool_name}' timed out. The operation took too long to complete. Please try again or check your network connection."
@@ -203,6 +212,9 @@ async def create_chat_completion_with_tools(
             # No tool calls, return regular response
             return response.content, []
         
+    except ToolStuckError:
+        # Surface it: the no-tools fallback below would only hide the cause.
+        raise
     except Exception as e:
         error_type = type(e).__name__
         error_msg = str(e)
