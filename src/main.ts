@@ -28,8 +28,25 @@ const app = document.querySelector<HTMLDivElement>('#app')!;
 const allReportIds = ['ai-agent', 'humanoid', 'perovskite'];
 
 const LS_THEME = 'yanheng.theme';
+const LS_SIDEBAR = 'yanheng.sidebar';
 
 let currentTheme: 'dark' | 'light' = 'dark';
+let sidebarPinned = localStorage.getItem(LS_SIDEBAR) !== 'hidden';
+
+/** 固定 / 自动隐藏侧边栏 */
+function applySidebar(pinned: boolean): void {
+  const root = document.querySelector<HTMLElement>('.app');
+  if (root) root.classList.toggle('sidebar-pinned', pinned);
+  const btn = document.getElementById('sidebarToggle');
+  if (btn) {
+    btn.classList.toggle('pinned', pinned);
+    btn.textContent = pinned ? '<' : '>';
+    btn.title = pinned
+      ? '收起左侧边栏'
+      : '展开左侧边栏';
+  }
+  localStorage.setItem(LS_SIDEBAR, pinned ? 'pinned' : 'hidden');
+}
 
 function applyTheme(theme: 'dark' | 'light'): void {
   currentTheme = theme;
@@ -106,7 +123,7 @@ function renderSidebar(): void {
 /* ---------------- 结构 ---------------- */
 function shell(): string {
   return `
-    <div class="app">
+    <div class="app sidebar-pinned">
       <aside class="sidebar">
         <div class="brand">
           <div class="brand-mark">研</div>
@@ -139,7 +156,10 @@ function shell(): string {
 
       <main class="main">
         <header class="topbar">
-          <div class="crumb">调研台 / 新建任务</div>
+          <div class="topbar-left">
+            <button class="sidebar-toggle" id="sidebarToggle" title="收起左侧边栏">&lt;</button>
+            <div class="crumb">调研台 / 新建任务</div>
+          </div>
           <div class="topbar-right">
             <button class="compare-btn" id="compareBtn">⇄ 双行业对比</button>
             <button class="theme-btn" id="themeBtn" title="切换深浅色主题">☾</button>
@@ -338,6 +358,11 @@ function bind(): void {
     applyTheme(currentTheme === 'dark' ? 'light' : 'dark');
   });
 
+  document.getElementById('sidebarToggle')!.addEventListener('click', () => {
+    sidebarPinned = !sidebarPinned;
+    applySidebar(sidebarPinned);
+  });
+
   document.getElementById('newBtn')!.addEventListener('click', () => showWelcome(suggestions));
 
   document.getElementById('convList')!.addEventListener('click', (e) => {
@@ -376,6 +401,7 @@ if (savedTheme === 'light') {
 }
 
 app.innerHTML = shell();
+applySidebar(sidebarPinned);
 setSidebarRefresh(renderSidebar);
 const chat = document.getElementById('chat')!;
 chat.innerHTML = welcomeHtml(suggestions);

@@ -19,6 +19,7 @@ import {
   usageChip,
   MODEL_LABEL,
 } from './common';
+import { fullReportHtml } from './report';
 
 /* ================================================================
  * 对话区模块（调研过程替换为 dag.html 的多 Agent 协同 DAG）
@@ -262,6 +263,7 @@ export function showWelcome(suggestions: string[]): void {
   const main = document.querySelector<HTMLElement>('.main');
   if (main) main.scrollTop = 0;
   hideFollowDock();
+  lockPageScroll(false);
   threads.clear();
   activeRuntime = null;
   activeConv = null;
@@ -511,6 +513,12 @@ interface CardRuntime {
   researchMsgIndex: number;
   /** 所属会话（进度写回它，而非当前查看的会话） */
   conv: Conversation | null;
+  /** 阅读模式下暂存的调研过程 HTML（返回时恢复） */
+  savedDocHtml: string;
+  /** 文档区当前是否展示完整报告 */
+  reportShown: boolean;
+  /** 用户输入的调研主题（显示在卡片头部「正在深度调研：」之后） */
+  query: string;
 }
 
 const runtimes = new WeakMap<HTMLElement, CardRuntime>();
@@ -553,6 +561,7 @@ function ensureFollowDock(): HTMLElement {
     'beforeend',
     `
     <div class="follow-dock hidden" id="followDock">
+      <div class="follow-hover-zone"></div>
       <div class="follow-up">
         <div class="follow-title">继续追问</div>
         <div class="follow-chips"></div>
@@ -620,14 +629,14 @@ function followAgentHtml(
     </div>`;
 }
 
-function cardHtml(id: string, r: Report, depth: ReportDepth): string {
+function cardHtml(id: string, r: Report, depth: ReportDepth, query?: string): string {
   const model = MODEL_LABEL[state.model] ?? state.model;
   return `
     <div class="research-card" data-card="${id}" data-reportid="${r.id}" data-depth="${depth}">
       <header class="research-header">
         <div class="header-left">
           <div class="header-tag">Multi-Agent Topology</div>
-          <div class="header-title">正在深度调研：<span>${esc(r.domain)}</span></div>
+          <div class="header-title">正在深度调研：<span>${esc(query || r.domain)}</span></div>
         </div>
         <button class="back-btn" data-act="exit-reader">${BACK_SVG}返回调研过程</button>
       </header>
@@ -638,7 +647,7 @@ function cardHtml(id: string, r: Report, depth: ReportDepth): string {
             <div class="sidebar-title">Agent 协同工作流</div>
             <div class="workflow-container">
               <svg class="workflow-svg"></svg>
-              ${wfNode('m', 'var(--agent-m)', 'M', 'Master 规划&主笔')}
+              ${wfNode('m', 'var(--agent-m)', 'M', 'Master 规划&写作')}
               ${wfNode('s', 'var(--agent-s)', 'S', 'Scout 检索')}
               ${wfNode('a', 'var(--agent-a)', 'A', 'Analyst 分析')}
               ${wfNode('c', 'var(--agent-c)', 'C', 'Critic 审查')}
@@ -755,7 +764,7 @@ function syncHeader(rt: CardRuntime): void {
   } else {
     tag.textContent = 'Multi-Agent Topology';
     tag.classList.remove('success');
-    title.innerHTML = `正在深度调研：<span>${esc(rt.report.domain)}</span>`;
+    title.innerHTML = `正在深度调研：<span>${esc(rt.query || rt.report.domain)}</span>`;
   }
 }
 
@@ -1159,23 +1168,39 @@ function finishCard(rt: CardRuntime): void {
   btn.textContent = '阅读完整报告';
   syncHeader(rt);
   syncMeta(rt, fmtTime(new Date()));
-  showFollowUp(rt);
+  if (activeRuntime === rt) {
+    lockPageScroll(false);
+    showFollowUp(rt);
+  }
   setStatus('已完成', 'ok');
   scrollDoc(rt);
 }
 
-/* ---------------- 阅读模式 ---------------- */
+/* ---------------- 阅读模式（卡片内切换：调研过程 <-> 完整报告） ---------------- */
 function enterReader(rt: CardRuntime): void {
   if (!rt.finished) return;
   rt.card.classList.add('reader-mode');
   closePanel(rt);
   const doc = docArea(rt);
-  if (doc) window.setTimeout(() => doc.scrollTo({ top: 0, behavior: 'smooth' }), 260);
+  if (doc) {
+    if (!rt.reportShown) {
+      rt.savedDocHtml = doc.innerHTML;
+      doc.innerHTML = fullReportHtml(rt.report, rt.depth);
+      rt.reportShown = true;
+    }
+    window.setTimeout(() => doc.scrollTo({ top: 0 }), 260);
+  }
   setStatus('阅读模式', 'ok');
 }
 
 function exitReader(rt: CardRuntime): void {
   rt.card.classList.remove('reader-mode');
+  const doc = docArea(rt);
+  if (doc && rt.reportShown) {
+    doc.innerHTML = rt.savedDocHtml ?? '';
+    rt.reportShown = false;
+    rt.stageEls = rt.stages.map((_, i) => q(rt, `.doc-content[data-stage="${i}"]`) as HTMLElement);
+  }
   window.setTimeout(() => scrollDoc(rt), 260);
   setStatus('已完成', 'ok');
 }
@@ -1204,12 +1229,14 @@ interface MountOpts {
   /** 所属会话与 research 消息下标（进度持久化目标） */
   conv?: Conversation | null;
   msgIndex?: number;
+  /** 用户输入的调研主题（卡片头部展示用，缺省回退到行业域） */
+  query?: string;
 }
 
 function mountCard(report: Report, depth: ReportDepth, finished: boolean, metaTime?: string, opts: MountOpts = {}): CardRuntime {
   const chat = document.getElementById('chat')!;
   const id = `${report.id}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-  chat.insertAdjacentHTML('beforeend', cardHtml(id, report, depth));
+  chat.insertAdjacentHTML('beforeend', cardHtml(id, report, depth, opts.query));
   const card = chat.querySelector<HTMLElement>(`.research-card[data-card="${id}"]`)!;
   const resumeStage = Math.min(Math.max(opts.stage ?? 0, 0), 5);
   const rt: CardRuntime = {
@@ -1217,6 +1244,7 @@ function mountCard(report: Report, depth: ReportDepth, finished: boolean, metaTi
     tail: card, threadId: id, hitlResolve: null, stageEls: [], wcSeq: 0, timers: [],
     resumeStage, resumeHitlDone: opts.hitlDone ?? false,
     researchMsgIndex: opts.msgIndex ?? -1, conv: opts.conv ?? null,
+    savedDocHtml: '', reportShown: false, query: opts.query ?? '',
   };
   runtimes.set(card, rt);
   threads.set(id, rt);
@@ -1226,6 +1254,9 @@ function mountCard(report: Report, depth: ReportDepth, finished: boolean, metaTi
   if (finished || resumeStage >= 5) {
     renderDone(rt, metaTime);
   } else {
+    /* 调研未完成（含断点续跑）：收起追问栏并锁定整页滚动，报告生成后由 finishCard 解锁 */
+    hideFollowDock();
+    lockPageScroll(true);
     window.setTimeout(() => runDag(rt), 300);
   }
   return rt;
@@ -1250,6 +1281,7 @@ function renderDone(rt: CardRuntime, metaTime?: string): void {
   btn.textContent = '阅读完整报告';
   syncHeader(rt);
   syncMeta(rt, metaTime || fmtTime(new Date()));
+  lockPageScroll(false);
   showFollowUp(rt);
 }
 
@@ -1451,14 +1483,25 @@ function editFollowMessage(msg: HTMLElement, rt: CardRuntime): void {
   });
 }
 
+/** 页面滚动到调研卡片头部：保证「正在深度调研：××」主题始终可见 */
+function scrollToCard(): void {
+  document
+    .querySelector<HTMLElement>('.research-card .research-header')
+    ?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+/** 调研进行中锁定整页滚动（右侧滚动条），报告生成后解锁 */
+function lockPageScroll(lock: boolean): void {
+  document.querySelector<HTMLElement>('.main')?.classList.toggle('scroll-locked', lock);
+}
+
 export function sendMessage(text: string): void {
   const query = text.trim();
   if (!query) return;
-  const chat = document.getElementById('chat')!;
 
   dockComposer();
   document.getElementById('welcome')?.remove();
-  chat.insertAdjacentHTML('beforeend', userMsgHtml(query));
+  /* 用户输入不再单独渲染气泡，直接展示在卡片头部「正在深度调研：」之后 */
 
   const report = matchReport(query);
   const depth = state.depth;
@@ -1470,9 +1513,9 @@ export function sendMessage(text: string): void {
   setDepthLocked(true);
   hideFollowDock();
   mountCard(report, depth, false, undefined, {
-    stage: 0, conv, msgIndex: conv.messages.length - 1,
+    stage: 0, conv, msgIndex: conv.messages.length - 1, query,
   });
-  scrollBottom();
+  scrollToCard();
 }
 
 export function replayConversation(conv: Conversation): void {
@@ -1480,6 +1523,7 @@ export function replayConversation(conv: Conversation): void {
   dockComposer();
   document.getElementById('welcome')?.remove();
   chat.innerHTML = '';
+  hideFollowDock();
 
   activeConv = conv;
   activeConvId = conv.id;
@@ -1496,11 +1540,13 @@ export function replayConversation(conv: Conversation): void {
   }
 
   let thread: CardRuntime | null = null;
+  let lastQuery = '';
   for (let i = 0; i < conv.messages.length; i++) {
     const msg = conv.messages[i];
     const threadId = thread?.threadId ?? '';
     if (msg.type === 'user') {
-      chat.insertAdjacentHTML('beforeend', userMsgHtml(msg.text));
+      /* 调研主题不再渲染气泡，暂存给紧随的 research 卡片头部展示 */
+      lastQuery = msg.text;
       thread = null;
     } else if (msg.type === 'follow-user') {
       const html = userMsgHtml(msg.text, 'follow-user', i, threadId);
@@ -1516,13 +1562,14 @@ export function replayConversation(conv: Conversation): void {
       const stage = msg.stage ?? 5;
       // 未完成的历史卡片：从已保存的阶段续跑；已完成则直接渲染完成态
       thread = mountCard(report, msg.depth, stage >= 5, conv.time, {
-        stage, hitlDone: msg.hitlDone ?? false, conv, msgIndex: i,
+        stage, hitlDone: msg.hitlDone ?? false, conv, msgIndex: i, query: lastQuery,
       });
+      lastQuery = '';
     }
   }
   setStatus('已完成', 'ok');
   sidebarRefresh();
-  scrollBottom();
+  scrollToCard();
 }
 
 /* ================================================================
