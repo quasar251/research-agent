@@ -653,29 +653,54 @@ function agentShell(id: string, r: Report, run: ResearchRun, usage: Usage, model
     )
     .join('');
 
+  const stepNames = ['拆解问题与大纲', '全网数据检索', '深度交叉验证', '最终报告合成'];
+  const steps = stepNames
+    .map(
+      (name, i) => `
+        <div class="step-item" data-step="${i}">
+          <div class="step-icon"></div>
+          <div class="step-content">
+            <div class="step-name">${name}</div>
+            <div class="step-status-text">等待中</div>
+          </div>
+        </div>`,
+    )
+    .join('');
+
   return `
-    <div class="msg agent" data-role="report" data-reportid="${r.id}" data-depth="${depth}">
-      <div class="msg-head">
-        <div class="avatar">研</div>
-        <div class="agent-meta">
-          <div class="agent-name">研衡 Agent</div>
-          <div class="agent-domain">研究主题 · ${esc(r.domain)} · ${esc(MODEL_LABEL[model] ?? model)}</div>
+    <div class="msg agent report-card" data-role="report" data-reportid="${r.id}" data-depth="${depth}">
+      <div class="global-progress"><div class="global-progress-fill" id="gp-${id}"></div></div>
+      <div class="card-body">
+        <aside class="thinking-sidebar">
+          <div class="sidebar-title">研衡思考过程</div>
+          <div class="steps-container" id="steps-${id}">${steps}</div>
+        </aside>
+        <div class="document-area">
+          <div class="msg-head">
+            <div class="avatar">研</div>
+            <div class="agent-meta">
+              <div class="agent-name">研衡 Agent</div>
+              <div class="agent-domain">研究主题 · ${esc(r.domain)} · ${esc(MODEL_LABEL[model] ?? model)}</div>
+            </div>
+          </div>
+          ${pipeProgressHtml(id)}
+          <div class="stages" id="stages-${id}">
+            ${stageHtml('align', 'Align · 前置对齐', 'lead', matrixHtml(run), `Lead 生成研究矩阵：${run.companies.length} 家公司 × ${run.dims.length} 个维度`)}
+            ${stageHtml('collect', 'Collect · 并行搜集', 'collector', `<div class="workers">${collectors}</div>${evidenceLedgerHtml(run.evidences)}`, '并行 fan-out 派发 Collector，更新证据台账')}
+            ${stageHtml('verify', 'Verify · 交叉核查', 'verifier', claimLedgerHtml(run.claims), '缺口补充 + 证据可信度分级 + 结论标注证据强度')}
+            ${stageHtml('synthesize', 'Synthesize · 合成报告', 'synthesizer', '', '聚合结论去重 + 一致性校验 → 生成报告')}
+          </div>
+          <div class="report" id="report-${id}"></div>
         </div>
       </div>
-      ${pipeProgressHtml(id)}
-      <div class="stages" id="stages-${id}">
-        ${stageHtml('align', 'Align · 前置对齐', 'lead', matrixHtml(run), `Lead 生成研究矩阵：${run.companies.length} 家公司 × ${run.dims.length} 个维度`)}
-        ${stageHtml('collect', 'Collect · 并行搜集', 'collector', `<div class="workers">${collectors}</div>${evidenceLedgerHtml(run.evidences)}`, '并行 fan-out 派发 Collector，更新证据台账')}
-        ${stageHtml('verify', 'Verify · 交叉核查', 'verifier', claimLedgerHtml(run.claims), '缺口补充 + 证据可信度分级 + 结论标注证据强度')}
-        ${stageHtml('synthesize', 'Synthesize · 合成报告', 'synthesizer', '', '聚合结论去重 + 一致性校验 → 生成报告')}
+      <div class="card-footer">
+        <div class="msg-foot">
+          <span class="agent-time">${fmtTime(new Date())}</span>
+          ${usageChip(usage)}
+          ${msgActionsHtml(false)}
+        </div>
+        ${followUpHtml(r, id)}
       </div>
-      <div class="report" id="report-${id}"></div>
-      <div class="msg-foot">
-        <span class="agent-time">${fmtTime(new Date())}</span>
-        ${usageChip(usage)}
-        ${msgActionsHtml(false)}
-      </div>
-      ${followUpHtml(r, id)}
     </div>`;
 }
 
@@ -950,12 +975,25 @@ function runPipeline(report: Report, depth: ReportDepth): void {
   const pipelineEl = document.getElementById(`pipeline-${id}`)!;
   const stagesEl = document.getElementById(`stages-${id}`)!;
   const box = document.getElementById(`report-${id}`)!;
+  const globalFill = document.getElementById(`gp-${id}`)!;
   const stageNodes = Array.from(pipelineEl.querySelectorAll<HTMLElement>('.pipe-node'));
   const stageEls = Array.from(stagesEl.querySelectorAll<HTMLElement>('.stage'));
+  const stepItems = Array.from(document.getElementById(`steps-${id}`)!.querySelectorAll<HTMLElement>('.step-item'));
+  const progressPct = [20, 50, 80, 100];
+
+  const setStep = (i: number, state: 'active' | 'completed') => {
+    const item = stepItems[i];
+    item.classList.remove('active', 'completed');
+    item.classList.add(state);
+    const t = item.querySelector<HTMLElement>('.step-status-text');
+    if (t) t.textContent = state === 'active' ? '正在执行…' : '已完成';
+  };
 
   const startStage = (i: number): (() => void) => {
     stageNodes[i].classList.add('running');
     stageEls[i].classList.add('running');
+    setStep(i, 'active');
+    globalFill.style.width = `${progressPct[i]}%`;
     return startTaskTimer(stageEls[i]);
   };
   const finishStage = (i: number, stop: () => void) => {
@@ -963,6 +1001,7 @@ function runPipeline(report: Report, depth: ReportDepth): void {
     stageNodes[i].classList.add('done');
     stageEls[i].classList.remove('running');
     stageEls[i].classList.add('done');
+    setStep(i, 'completed');
     stop();
   };
 

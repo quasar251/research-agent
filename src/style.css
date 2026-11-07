@@ -22,6 +22,15 @@
   --field-line: rgba(236, 230, 217, 0.16);
   --send-ink: #191410;
   --tip-color: #8a8172;
+  /* 对话主卡片（玻璃拟态） */
+  --glass: rgba(31, 26, 21, 0.86);
+  --glass-line: rgba(236, 230, 217, 0.1);
+  --glass-shadow: 0 24px 64px rgba(0, 0, 0, 0.34), 0 4px 12px rgba(0, 0, 0, 0.2);
+  --side-bg: rgba(20, 17, 14, 0.4);
+  --doc-bg: #1b1713;
+  --step-line: rgba(236, 230, 217, 0.14);
+  --progress-track: rgba(236, 230, 217, 0.12);
+  --success: #7fa062;
 }
 
 [data-theme='light'] {
@@ -46,6 +55,15 @@
   --field-line: #e5e0d5;
   --send-ink: #ffffff;
   --tip-color: #a9a5a0;
+  /* 对话主卡片（玻璃拟态） */
+  --glass: rgba(255, 255, 255, 0.85);
+  --glass-line: rgba(255, 255, 255, 0.8);
+  --glass-shadow: 0 24px 64px rgba(0, 0, 0, 0.04), 0 4px 12px rgba(0, 0, 0, 0.02);
+  --side-bg: rgba(247, 244, 235, 0.4);
+  --doc-bg: #ffffff;
+  --step-line: #e8e4d9;
+  --progress-track: #e8e4d9;
+  --success: #4a8b63;
 }
 
 [data-theme='light'] body::before {
