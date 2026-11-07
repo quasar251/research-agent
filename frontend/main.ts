@@ -1,5 +1,5 @@
 import './style.css';
-import { reports, suggestions, type Report, type ReportDepth } from './mock';
+import { suggestions, type ReportDepth } from './mock';
 import {
   esc,
   state,
@@ -13,20 +13,30 @@ import {
   activeConvId,
   loadConvs,
   seedConvs,
-  replayConversation,
   deleteConversation,
   clearConversations,
   setSidebarRefresh,
-  welcomeHtml,
+} from './store';
+import {
+  replayConversation,
   floatComposer,
   showWelcome,
   sendMessage,
   bindChatEvents,
 } from './dialog';
+import { welcomeHtml } from './views';
 import { openConsole, isConsoleOpen, closeConsole } from './console';
+import {
+  tasks,
+  taskItemHtml,
+  seedTasks,
+  removeTask,
+  openTaskModal,
+  setTasksRefresh,
+} from './tasks';
+import { openCompare } from './compare';
 
 const app = document.querySelector<HTMLDivElement>('#app')!;
-const allReportIds = ['ai-agent', 'humanoid', 'perovskite'];
 
 const LS_THEME = 'yanheng.theme';
 const LS_SIDEBAR = 'yanheng.sidebar';
@@ -57,25 +67,6 @@ function applyTheme(theme: 'dark' | 'light'): void {
   if (btn) btn.textContent = theme === 'dark' ? '☾' : '☀';
 }
 
-/* ---------------- 定时任务（内存态，Mock） ---------------- */
-interface ScheduledTask {
-  id: string;
-  reportId: string;
-  depth: ReportDepth;
-  freq: '每天' | '每周' | '每月';
-  time: string;
-}
-
-let tasks: ScheduledTask[] = [];
-let taskSeq = 0;
-
-function seedTasks(): void {
-  tasks = [
-    { id: `t${++taskSeq}`, reportId: 'ai-agent', depth: 'deep', freq: '每周', time: '09:00' },
-    { id: `t${++taskSeq}`, reportId: 'perovskite', depth: 'simple', freq: '每月', time: '08:30' },
-  ];
-}
-
 /* ---------------- 侧边栏 ---------------- */
 function convItemHtml(c: (typeof conversations)[number]): string {
   const depthLabel = c.depth === 'deep' ? '深度' : '简版';
@@ -93,20 +84,6 @@ function convItemHtml(c: (typeof conversations)[number]): string {
         </div>
       </button>
       <button class="hi-del" data-del="${c.id}" title="删除此对话">✕</button>
-    </div>`;
-}
-
-function taskItemHtml(t: ScheduledTask): string {
-  return `
-    <div class="task-item" data-task="${t.id}">
-      <div class="task-head">
-        <div class="task-title">${esc(reports[t.reportId].domain)}</div>
-        <button class="task-del" data-del="${t.id}" title="删除">✕</button>
-      </div>
-      <div class="task-meta">
-        <span>${t.freq} · ${esc(t.time)}</span>
-        <span class="task-depth">${t.depth === 'deep' ? '深度' : '简版'}</span>
-      </div>
     </div>`;
 }
 
@@ -202,112 +179,6 @@ function shell(): string {
     </div>`;
 }
 
-/* ---------------- 双行业对比 ---------------- */
-function reportOptions(selected: string): string {
-  return allReportIds
-    .map((id) => `<option value="${id}" ${id === selected ? 'selected' : ''}>${esc(reports[id].topic)}</option>`)
-    .join('');
-}
-
-function compareColumn(r: Report): string {
-  const takes = r.takeaways.slice(0, 3).map((t) => `<li>${esc(t.text)}</li>`).join('');
-  return `
-    <div class="compare-col">
-      <div class="cmp-kicker">${esc(r.domain)}</div>
-      <h3 class="cmp-title">${esc(r.topic)}</h3>
-      <div class="cmp-metric"><span>${esc(r.headline.label)}</span><b>${esc(r.headline.value)}</b></div>
-      <div class="cmp-cagr">CAGR <b>${esc(r.cagr)}</b></div>
-      <div class="cmp-tags">${r.tags.map((t) => `<span class="tag">${esc(t)}</span>`).join('')}</div>
-      <ol class="cmp-takeaways">${takes}</ol>
-    </div>`;
-}
-
-function openCompare(): void {
-  let a = reports['ai-agent'];
-  let b = reports['humanoid'];
-  const overlay = document.createElement('div');
-  overlay.className = 'compare-overlay';
-  overlay.innerHTML = `
-    <div class="compare">
-      <div class="compare-head">
-        <div class="compare-title">双行业对比 <span class="compare-sub">RESEARCH COMPARISON · 虚拟数据</span></div>
-        <button class="close-btn" id="closeCompare">✕ 关闭</button>
-      </div>
-      <div class="compare-controls">
-        <select id="cmpA">${reportOptions(a.id)}</select>
-        <span class="vs">VS</span>
-        <select id="cmpB">${reportOptions(b.id)}</select>
-      </div>
-      <div class="compare-grid" id="cmpGrid">${compareColumn(a)}${compareColumn(b)}</div>
-    </div>`;
-  document.body.appendChild(overlay);
-
-  const selA = overlay.querySelector<HTMLSelectElement>('#cmpA')!;
-  const selB = overlay.querySelector<HTMLSelectElement>('#cmpB')!;
-  const grid = overlay.querySelector<HTMLElement>('#cmpGrid')!;
-  const update = () => {
-    a = reports[selA.value];
-    b = reports[selB.value];
-    grid.innerHTML = `${compareColumn(a)}${compareColumn(b)}`;
-  };
-  selA.addEventListener('change', update);
-  selB.addEventListener('change', update);
-  overlay.querySelector('#closeCompare')!.addEventListener('click', () => overlay.remove());
-  overlay.addEventListener('click', (e) => {
-    if (e.target === overlay) overlay.remove();
-  });
-}
-
-/* ---------------- 定时任务弹窗 ---------------- */
-function closeTaskModal(): void {
-  document.getElementById('taskModal')?.remove();
-}
-
-function openTaskModal(): void {
-  closeTaskModal();
-  const overlay = document.createElement('div');
-  overlay.className = 'modal-overlay';
-  overlay.id = 'taskModal';
-  overlay.innerHTML = `
-    <div class="modal">
-      <div class="modal-head">
-        <div class="modal-title">创建定时任务 <span class="modal-sub">SCHEDULED RESEARCH · 虚拟数据</span></div>
-        <button class="close-btn" id="closeTask">✕ 关闭</button>
-      </div>
-      <form id="taskForm" class="task-form">
-        <label class="field"><span>调研行业</span>
-          <select id="tReport">${reportOptions('ai-agent')}</select>
-        </label>
-        <label class="field"><span>报告深度</span>
-          <select id="tDepth"><option value="deep">深度</option><option value="simple">简单</option></select>
-        </label>
-        <label class="field"><span>执行频率</span>
-          <select id="tFreq"><option>每天</option><option>每周</option><option>每月</option></select>
-        </label>
-        <label class="field"><span>执行时间</span>
-          <input type="time" id="tTime" value="09:00" />
-        </label>
-        <button class="modal-submit" type="submit">创建任务</button>
-      </form>
-    </div>`;
-  document.body.appendChild(overlay);
-
-  overlay.querySelector('#closeTask')!.addEventListener('click', closeTaskModal);
-  overlay.addEventListener('click', (e) => {
-    if (e.target === overlay) closeTaskModal();
-  });
-  overlay.querySelector<HTMLFormElement>('#taskForm')!.addEventListener('submit', (e) => {
-    e.preventDefault();
-    const reportId = (overlay.querySelector('#tReport') as HTMLSelectElement).value;
-    const depth = (overlay.querySelector('#tDepth') as HTMLSelectElement).value as ReportDepth;
-    const freq = (overlay.querySelector('#tFreq') as HTMLSelectElement).value as ScheduledTask['freq'];
-    const time = (overlay.querySelector('#tTime') as HTMLInputElement).value || '09:00';
-    tasks.push({ id: `t${++taskSeq}`, reportId, depth, freq, time });
-    renderSidebar();
-    closeTaskModal();
-  });
-}
-
 /* ---------------- 事件绑定 ---------------- */
 function bind(): void {
   const input = document.getElementById('input') as HTMLTextAreaElement;
@@ -398,8 +269,7 @@ function bind(): void {
   document.getElementById('taskList')!.addEventListener('click', (e) => {
     const del = (e.target as HTMLElement).closest<HTMLElement>('.task-del');
     if (!del) return;
-    tasks = tasks.filter((t) => t.id !== del.dataset.del);
-    renderSidebar();
+    removeTask(del.dataset.del ?? '');
   });
 
   bindChatEvents();

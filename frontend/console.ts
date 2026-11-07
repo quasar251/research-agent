@@ -1,6 +1,7 @@
 import { reports } from './mock';
 import { esc } from './common';
-import { conversations, todaySpend, isResearchRunning, restoreFollowDock } from './dialog';
+import { conversations, todaySpend } from './store';
+import { isResearchRunning, restoreFollowDock } from './dialog';
 
 /* ================================================================
  * 用户控制台 · 调研台账（独立页面视图，复用 .main 布局与顶栏）

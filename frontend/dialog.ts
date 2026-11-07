@@ -1,11 +1,4 @@
-import {
-  reports,
-  STRENGTH_LABEL,
-  type Report,
-  type Section,
-  type SwotItem,
-  type ReportDepth,
-} from './mock';
+import { reports, type Report, type ReportDepth } from './mock';
 import {
   esc,
   fmtTime,
@@ -14,221 +7,45 @@ import {
   setDepthUI,
   setStatus,
   scrollBottom,
-  usageFor,
   usageForModel,
-  usageChip,
   MODEL_LABEL,
 } from './common';
 import { fullReportHtml } from './report';
+import { buildStages, type StageDef } from './stages';
+import {
+  activeConv,
+  todaySpend,
+  saveConvs,
+  refreshSidebar,
+  recordConversation,
+  setActiveConv,
+  setTodaySpend,
+  type Conversation,
+} from './store';
+import {
+  welcomeHtml,
+  wordWallHtml,
+  ensureFollowDock,
+  msgActionsHtml,
+  followAgentHtml,
+  cardHtml,
+  userMsgHtml,
+} from './views';
 
 /* ================================================================
- * 对话区模块（调研过程替换为 dag.html 的多 Agent 协同 DAG）
+ * 对话区模块（多 Agent 协同 DAG 的交互与流程引擎）
  * ----------------------------------------------------------------
- * 1. 会话存储（历史对话持久化）
- * 2. 新建调研页（欢迎态 / 文字墙 / 输入框浮沉）
- * 3. 调研主卡片骨架（顶部 Stepper + 拓扑侧栏 + 文档区 + HITL 面板）
- * 4. 五阶段 DAG 流程引擎（流式执行卡片 + 阶段结果摘要 + 用户审批）
- * 5. 阶段结果渲染（任务拆解 / 检索 / 分析 / 审查 / 报告）
- * 6. 阅读模式 / 消息发送 / 聊天区事件委托
+ * 会话存储见 store.ts，五阶段内容构建见 stages.ts。
+ * 本模块只负责：
+ * 1. 新建调研页（欢迎态 / 文字墙 / 输入框浮沉）
+ * 2. 调研主卡片骨架（顶部 Stepper + 拓扑侧栏 + 文档区 + HITL 面板）
+ * 3. 五阶段 DAG 流程引擎（流式执行卡片 + 阶段结果 + 用户审批）
+ * 4. 阅读模式 / 消息发送 / 聊天区事件委托
  * ================================================================ */
-
-/* ================================================================
- * 一、会话存储（历史对话持久化）
- * ================================================================ */
-export type ChatMessage =
-  | { type: 'user'; text: string }
-  | { type: 'research'; reportId: string; depth: ReportDepth; stage?: number; hitlDone?: boolean }
-  | { type: 'follow-user'; text: string }
-  | { type: 'follow-agent'; label: string; bullets: string[]; time: string; model?: string };
-
-export interface Conversation {
-  id: string;
-  reportId: string;
-  title: string;
-  domain: string;
-  time: string;
-  depth: ReportDepth;
-  cost: number;
-  messages: ChatMessage[];
-}
-
-export let conversations: Conversation[] = [];
-export let activeConvId: string | null = null;
-export let activeConv: Conversation | null = null;
-export let todaySpend = 0;
-let convSeq = 0;
-
-const LS_CONVS = 'yanheng.conversations';
-const LS_SPEND = 'yanheng.todaySpend';
-
-/** 侧边栏刷新回调，由应用外壳注册（避免模块间循环依赖） */
-let sidebarRefresh: () => void = () => {};
-
-export function setSidebarRefresh(fn: () => void): void {
-  sidebarRefresh = fn;
-}
-
-export function saveConvs(): void {
-  localStorage.setItem(LS_CONVS, JSON.stringify(conversations));
-  localStorage.setItem(LS_SPEND, String(todaySpend));
-}
-
-/** 兼容旧版本（report / follow-user / follow-agent）落盘的消息 */
-function normalizeMessage(raw: unknown): ChatMessage | null {
-  if (!raw || typeof raw !== 'object') return null;
-  const m = raw as {
-    type?: string;
-    text?: string;
-    reportId?: string;
-    depth?: ReportDepth;
-    stage?: number;
-    hitlDone?: boolean;
-    label?: string;
-    bullets?: string[];
-    time?: string;
-    model?: string;
-  };
-  if (m.type === 'user' && typeof m.text === 'string') return { type: 'user', text: m.text };
-  if ((m.type === 'research' || m.type === 'report') && m.reportId) {
-    return { type: 'research', reportId: m.reportId, depth: m.depth ?? 'deep', stage: m.stage, hitlDone: m.hitlDone };
-  }
-  if (m.type === 'follow-user' && typeof m.text === 'string') return { type: 'follow-user', text: m.text };
-  if (m.type === 'follow-agent' && Array.isArray(m.bullets)) {
-    return {
-      type: 'follow-agent',
-      label: m.label ?? '追问',
-      bullets: m.bullets,
-      time: m.time ?? '',
-      model: m.model ?? 'pro',
-    };
-  }
-  return null;
-}
-
-export function loadConvs(): boolean {
-  const raw = localStorage.getItem(LS_CONVS);
-  if (raw === null) return false;
-  try {
-    const parsed = JSON.parse(raw) as Conversation[];
-    if (!Array.isArray(parsed)) return false;
-    conversations = parsed.map((c) => ({
-      ...c,
-      messages: (c.messages ?? [])
-        .map(normalizeMessage)
-        .filter((m): m is ChatMessage => m !== null),
-    }));
-    convSeq = conversations.reduce((m, c) => Math.max(m, Number(c.id.replace('c', '')) || 0), 0);
-    todaySpend = Number(localStorage.getItem(LS_SPEND)) || 0;
-    return true;
-  } catch {
-    /* 数据损坏则回退到种子数据 */
-  }
-  return false;
-}
-
-export function seedConvs(): void {
-  const seeds: { reportId: string; time: string; depth: ReportDepth }[] = [
-    { reportId: 'ai-agent', time: '今天 14:20', depth: 'deep' },
-    { reportId: 'humanoid', time: '昨天 09:41', depth: 'deep' },
-    { reportId: 'perovskite', time: '11-04 16:05', depth: 'simple' },
-  ];
-  conversations = seeds.map((s) => {
-    const r = reports[s.reportId];
-    return {
-      id: `c${++convSeq}`,
-      reportId: s.reportId,
-      title: r.topic,
-      domain: r.domain,
-      time: s.time,
-      depth: s.depth,
-      cost: usageFor(s.depth).cost,
-      messages: [],
-    };
-  });
-  todaySpend = conversations.reduce((sum, c) => sum + c.cost, 0);
-  saveConvs();
-}
-
-export function recordConversation(report: Report, depth: ReportDepth): Conversation {
-  const cost = usageFor(depth).cost;
-  const id = `c${++convSeq}`;
-  const conv: Conversation = {
-    id,
-    reportId: report.id,
-    title: report.topic,
-    domain: report.domain,
-    time: fmtTime(new Date()),
-    depth,
-    cost,
-    messages: [],
-  };
-  conversations.unshift(conv);
-  todaySpend += cost;
-  activeConvId = id;
-  activeConv = conv;
-  saveConvs();
-  sidebarRefresh();
-  return conv;
-}
-
-export function deleteConversation(id: string): void {
-  const conv = conversations.find((c) => c.id === id);
-  conversations = conversations.filter((c) => c.id !== id);
-  if (conv) todaySpend = Math.max(0, todaySpend - conv.cost);
-  if (activeConvId === id) {
-    activeConvId = null;
-    activeConv = null;
-  }
-  saveConvs();
-  sidebarRefresh();
-}
-
-export function clearConversations(): void {
-  conversations = [];
-  todaySpend = 0;
-  activeConvId = null;
-  activeConv = null;
-  saveConvs();
-  sidebarRefresh();
-}
 
 /* ================================================================
  * 二、新建调研页（欢迎态）
  * ================================================================ */
-const WALL_WORDS = [
-  '汽车出口', '美妆零售', 'AI 智能体', '人形机器人', '钙钛矿光伏', '跨境电商',
-  '新能源汽车', '半导体', '生物医药', '低空经济', '储能', '具身智能',
-  '消费电子', 'SaaS 出海', '工业软件', '氢能', '智能驾驶', '医疗器械',
-  '宠物经济', '出海品牌', '数字营销', '算力租赁', '光伏组件', '创新药',
-  '连锁餐饮', '预制菜', '咖啡连锁', '银发经济', '合成生物', '卫星互联网',
-];
-
-export function welcomeHtml(suggestions: string[]): string {
-  const chips = suggestions.map(chipHtml).join('');
-  return `
-    <div class="welcome" id="welcome">
-      <div class="welcome-kicker">INDUSTRY INTELLIGENCE</div>
-      <h1 class="welcome-title">想了解哪个行业？把问题交给<em>研衡</em>。</h1>
-      <p class="welcome-sub">选「简单 / 深度」，输入主题即可生成报告，过程中可随时确认或提出修改意见。</p>
-      <div class="welcome-actions">${chips}</div>
-    </div>`;
-}
-
-function wordWallHtml(): string {
-  const rows = [0, 1, 2, 3, 4]
-    .map((r) => {
-      const words = WALL_WORDS.slice(r * 6, r * 6 + 6);
-      const line = words.map((w) => `<span class="ww-word">${esc(w)}</span>`).join('');
-      return `<div class="ww-row">${line}${line}</div>`;
-    })
-    .join('');
-  return `<div class="word-wall" id="wordWall" aria-hidden="true">${rows}</div>`;
-}
-
-function chipHtml(q: string): string {
-  return `<button class="chip" data-query="${esc(q)}">${esc(q)}<svg class="chip-arrow" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="7" y1="17" x2="17" y2="7"></line><polyline points="7 7 17 7 17 17"></polyline></svg></button>`;
-}
-
 export function dockComposer(): void {
   const main = document.querySelector<HTMLElement>('.main')!;
   const chat = document.getElementById('chat')!;
@@ -266,315 +83,15 @@ export function showWelcome(suggestions: string[]): void {
   lockPageScroll(false);
   threads.clear();
   activeRuntime = null;
-  activeConv = null;
-  activeConvId = null;
+  setActiveConv(null);
   setDepthLocked(false);
-  sidebarRefresh();
+  refreshSidebar();
   setStatus('待命中', 'idle');
-}
-
-/* ================================================================
- * 三、阶段结果渲染（由 report 数据驱动）
- * ================================================================ */
-const AGENT_COLOR: Record<string, string> = {
-  Scout: 'var(--agent-s)',
-  Analyst: 'var(--agent-a)',
-  Critic: 'var(--agent-c)',
-  Master: 'var(--agent-m)',
-};
-const AGENT_LETTER: Record<string, string> = { Scout: 'S', Analyst: 'A', Critic: 'C', Master: 'M' };
-
-function miniItem(html: string): string {
-  return `<div class="mini-item">${html}</div>`;
-}
-
-function miniIcon(agent: string): string {
-  return `<span class="mini-icon" style="background:${AGENT_COLOR[agent]}">${AGENT_LETTER[agent]}</span>`;
-}
-
-/** 按深度过滤可见章节 */
-function visibleSections(r: Report, depth: ReportDepth): Section[] {
-  return depth === 'deep' ? r.sections : r.sections.filter((s) => s.depth !== 'deep');
-}
-
-function findSection(r: Report, depth: ReportDepth, kinds: Section['kind'][]): Section | undefined {
-  const vis = visibleSections(r, depth);
-  for (const k of kinds) {
-    const s = vis.find((x) => x.kind === k);
-    if (s) return s;
-  }
-  return undefined;
-}
-
-function swotGrid(swot: SwotItem): string {
-  const cell = (title: string, items: string[], cls: string) => `
-    <div class="swot-card ${cls}">
-      <div class="swot-title">${title}</div>
-      <ul class="swot-list">${items.map((i) => `<li>${esc(i)}</li>`).join('')}</ul>
-    </div>`;
-  return `
-    <div class="doc-h2" style="margin-top:20px;">SWOT 矩阵</div>
-    <div class="swot-grid">
-      ${cell('S - 优势', swot.strengths, 'swot-s')}
-      ${cell('W - 劣势', swot.weaknesses, 'swot-w')}
-      ${cell('O - 机会', swot.opportunities, 'swot-o')}
-      ${cell('T - 威胁', swot.threats, 'swot-t')}
-    </div>`;
-}
-
-interface StageCard {
-  title: string;
-  logs: string[];
-  ms: number;
-}
-interface StageDef {
-  /** 阶段标题（doc-h2） */
-  title: string;
-  /** 流式执行卡片（可多张） */
-  cards: StageCard[];
-  /** 阶段结果摘要 HTML */
-  result: string;
-  /** 审批提示语；为空表示该阶段无需 HITL */
-  hitl: string | null;
-}
-
-/** 构建五阶段内容（数据驱动自 report）；简单模式走三阶段轻量管线 */
-function buildStages(r: Report, depth: ReportDepth): StageDef[] {
-  if (depth === 'simple') return buildSimpleStages(r);
-  const cites = r.citations.slice(0, 4);
-  const docList = cites.map((c) => `《${c.title}》`).join('、');
-  const swotSection = findSection(r, depth, ['swot']);
-  const marketSection = findSection(r, depth, ['chart', 'bars']);
-  const overview = findSection(r, depth, ['prose']);
-
-  // 阶段一：任务拆解
-  const tasks = [
-    { title: '基础信息检索', desc: `搜集 ${r.domain} 行业概述、最新技术趋势及政策环境。`, agent: 'Scout' },
-    { title: '市场数据抓取', desc: `提取 ${r.domain} 市场规模、头部厂商营收数据及增长率。`, agent: 'Scout' },
-    { title: '产业链深度分析', desc: '绘制产业链图谱，分析上下游技术壁垒与议价能力。', agent: 'Analyst' },
-    { title: 'SWOT 模型构建', desc: `结合市场数据，输出 ${r.domain} 的 SWOT 矩阵。`, agent: 'Analyst' },
-  ];
-  const taskList = `<div class="mini-list">` + tasks.map((t) =>
-    miniItem(`${miniIcon(t.agent)}<div><strong>${esc(t.title)}：</strong>${esc(t.desc)}</div>`)
-  ).join('') + `</div>`;
-
-  const stage1: StageDef = {
-    title: '阶段一 · 任务拆解',
-    cards: [{
-      title: 'Master 正在拆解调研任务...',
-      logs: [
-        `解析调研主题：${r.topic}…`,
-        '规划任务边界与依赖关系…',
-        '匹配执行 Agent：Scout ×2、Analyst ×2…',
-        '生成任务执行计划…',
-      ],
-      ms: 5000,
-    }],
-    result: taskList,
-    hitl: '阶段一结果：Master 已拆解出上方 4 项任务并分配至 Scout / Analyst。请审阅确认。',
-  };
-
-  // 阶段二：数据检索
-  const stage2: StageDef = {
-    title: '阶段二 · 数据检索',
-    cards: [
-      {
-        title: 'Scout 正在检索数据...',
-        logs: [
-          '连接 IDC / Gartner 行业报告库…命中 9 篇',
-          '爬取 arXiv 论文库…命中 17 篇',
-          '抓取头部厂商财报与官网数据…4 家完成',
-          '检索政策文件库…3 份文件',
-          '去重与可信度过滤…保留 42 条有效信息源',
-        ],
-        ms: 6000,
-      },
-      {
-        title: 'Analyst 正在整理与结构化数据...',
-        logs: [
-          '解析财报表格，提取营收与增长率…',
-          `汇总 ${r.domain} 技术趋势清单…`,
-          '生成市场规模与营收数据表…',
-        ],
-        ms: 3500,
-      },
-    ],
-    result: `<div class="mini-list">
-      ${miniItem('<strong>检索渠道：</strong>IDC / Gartner 行业报告库、arXiv 论文库、各厂商官网财报、政策文件库')}
-      ${miniItem(`<strong>关键文档：</strong>${esc(docList)}`)}
-      ${miniItem(`<strong>数据产出：</strong>${esc(marketSection?.heading ?? '市场规模')} 数据表 ×1，共 42 条有效信息源`)}
-    </div>`,
-    hitl: '阶段二结果：Scout 已检索 4 类渠道、多份关键文档，共 42 条信息源。请确认是否进行下一步深度分析？',
-  };
-
-  // 阶段三：深度分析
-  const stage3: StageDef = {
-    title: '阶段三 · 深度分析',
-    cards: [{
-      title: 'Analyst 正在执行深度分析...',
-      logs: [
-        '绘制产业链上中下游图谱…完成',
-        '波特五力模型：识别核心壁垒…',
-        `市场规模自下而上估算…CAGR ${r.cagr}`,
-        '结合份额数据交叉验证，生成 SWOT 矩阵…',
-      ],
-      ms: 6500,
-    }],
-    result: `<div class="mini-list">
-      ${miniItem('<strong>分析方法：</strong>产业链分析（波特五力）、SWOT 模型、市场规模自下而上估算')}
-      ${miniItem('<strong>分析过程：</strong>先绘制产业链图谱识别核心壁垒，再结合份额数据交叉验证，输出 SWOT 矩阵')}
-      ${miniItem(`<strong>初步结论：</strong>${esc(overview?.paragraphs?.[0] ?? r.summary)}`)}
-    </div>${swotSection?.swot ? swotGrid(swotSection.swot) : ''}`,
-    hitl: '阶段三结果：Analyst 已用产业链分析 + SWOT 方法输出结论与矩阵，请确认。',
-  };
-
-  // 阶段四：交叉审查
-  const stage4: StageDef = {
-    title: '阶段四 · 交叉审查',
-    cards: [{
-      title: 'Critic 正在交叉审查...',
-      logs: [
-        '逐条回溯 SWOT 结论的信息源出处…',
-        '与 Gartner 口径交叉比对份额数据…误差 &lt; 2%',
-        '核验营收增长率计算（剔除汇率影响）…通过',
-        '发现 1 处表述缺口：威胁项缺少时间窗口…',
-      ],
-      ms: 5500,
-    }],
-    result: `<div class="mini-list">
-      ${miniItem('<strong>观点溯源：</strong>对 SWOT 四项结论逐条回溯，均命中 Scout 检索的原始报告与财报，无凭空推断')}
-      ${miniItem('<strong>数据核验：</strong>份额数据与 Gartner 口径交叉比对，误差 &lt; 2%；营收增长率已剔除汇率影响')}
-      ${miniItem('<strong>审查意见：</strong>「开源框架追赶」威胁项建议补充时间窗口（预计 12-18 个月），已反馈 Master')}
-    </div>`,
-    hitl: null,
-  };
-
-  // 阶段五：生成报告
-  const insight = r.takeaways[0]?.text ?? r.summary;
-  const stage5: StageDef = {
-    title: '阶段五 · 生成报告',
-    cards: [{
-      title: 'Master 正在整合报告...',
-      logs: [
-        '合并前四阶段产出…',
-        '按「市场格局 → 产业链 → SWOT → 建议」四章排版…',
-        '采纳 Critic 修订意见（威胁项补充时间窗口）…',
-        '生成目录与引用索引…',
-      ],
-      ms: 5000,
-    }],
-    result: `<div class="doc-h2" style="margin-top:20px;">综合洞察与建议</div>
-      <div class="doc-text" style="background-color:var(--bg-elev);padding:16px;border-radius:12px;border-left:3px solid var(--dag-primary);">
-        <strong>研衡协同结论：</strong>${esc(insight)}
-      </div>
-      <div class="mini-list">${r.citations.map((c, i) =>
-        miniItem(`<strong>[${i + 1}]</strong> ${esc(c.title)} <span class="strength strength-${c.strength}">${STRENGTH_LABEL[c.strength]}</span> · ${esc(c.source)}`)
-      ).join('')}</div>`,
-    hitl: null,
-  };
-
-  return [stage1, stage2, stage3, stage4, stage5];
-}
-
-/**
- * 简单模式：三阶段轻量管线（规划与检索 → 速览分析 → 核验与报告）。
- * 不设审批闸口、日志与卡片数量精简，产出为基础章节 + 核心结论，
- * 总耗时约为深度模式的三分之一。
- */
-function buildSimpleStages(r: Report): StageDef[] {
-  const overview = findSection(r, 'simple', ['prose']);
-  const marketSection = findSection(r, 'simple', ['chart', 'bars']);
-  const insight = r.takeaways[0]?.text ?? r.summary;
-  const keyDocs = r.citations
-    .slice(0, 2)
-    .map((c) => `《${c.title}》`)
-    .join('、');
-
-  const stage1: StageDef = {
-    title: '阶段一 · 规划与检索',
-    cards: [
-      {
-        title: 'Master 正在快速规划...',
-        logs: [
-          `解析调研主题：${r.topic}…`,
-          '圈定 3 项轻量任务（概述 / 数据 / 结论）…',
-        ],
-        ms: 2200,
-      },
-      {
-        title: 'Scout 正在检索关键数据...',
-        logs: [
-          '检索行业报告库与厂商财报…命中 18 条',
-          '可信度过滤…保留 12 条有效信息源',
-        ],
-        ms: 3200,
-      },
-    ],
-    result: `<div class="mini-list">
-      ${miniItem('<strong>检索渠道：</strong>行业报告库、厂商官网财报')}
-      ${miniItem(`<strong>关键文档：</strong>${esc(keyDocs)}`)}
-      ${miniItem('<strong>数据产出：</strong>12 条有效信息源（轻量口径）')}
-    </div>`,
-    hitl: null,
-  };
-
-  const stage2: StageDef = {
-    title: '阶段二 · 速览分析',
-    cards: [
-      {
-        title: 'Analyst 正在速览分析...',
-        logs: ['提取市场规模与增长率…', '概括竞争格局要点…'],
-        ms: 3000,
-      },
-    ],
-    result: `<div class="mini-list">
-      ${miniItem(`<strong>市场数据：</strong>${esc(marketSection?.heading ?? '市场规模')} 速览`)}
-      ${miniItem(`<strong>速览结论：</strong>${esc(overview?.paragraphs?.[0] ?? r.summary)}`)}
-    </div>`,
-    hitl: null,
-  };
-
-  const stage3: StageDef = {
-    title: '阶段三 · 核验与报告',
-    cards: [
-      {
-        title: 'Critic 正在快速核验...',
-        logs: ['抽查关键数据出处…通过'],
-        ms: 1600,
-      },
-      {
-        title: 'Master 正在整合报告...',
-        logs: ['按「概述 → 数据 → 结论」三段排版…', '生成引用索引…'],
-        ms: 2400,
-      },
-    ],
-    result: `<div class="doc-h2" style="margin-top:20px;">核心结论</div>
-      <div class="doc-text" style="background-color:var(--bg-elev);padding:16px;border-radius:12px;border-left:3px solid var(--dag-primary);">
-        <strong>研衡速览结论：</strong>${esc(insight)}
-      </div>
-      <div class="mini-list">${r.citations
-        .slice(0, 2)
-        .map(
-          (c, i) =>
-            miniItem(
-              `<strong>[${i + 1}]</strong> ${esc(c.title)} <span class="strength strength-${c.strength}">${STRENGTH_LABEL[c.strength]}</span> · ${esc(c.source)}`,
-            ),
-        )
-        .join('')}</div>`,
-    hitl: null,
-  };
-
-  return [stage1, stage2, stage3];
 }
 
 /* ================================================================
  * 四、卡片骨架与运行时
  * ================================================================ */
-const BACK_SVG = `<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>`;
-
-const STEP_LABELS = ['任务拆解', '数据检索', '深度分析', '交叉审查', '生成报告'];
-const STEP_LABELS_SIMPLE = ['规划检索', '速览分析', '核验报告'];
-
 interface CardRuntime {
   card: HTMLElement;
   report: Report;
@@ -628,148 +145,6 @@ window.addEventListener('resize', () => {
     else if (!rt.finished) drawLines(rt);
   }
 });
-
-function stepperHtml(labels: string[] = STEP_LABELS): string {
-  return labels.map((label, i) => {
-    const line = i < labels.length - 1 ? `<div class="stepper-line" data-line="${i}"></div>` : '';
-    return `
-      <div class="stepper-item" data-step="${i}"><div class="stepper-dot">${i + 1}</div><div class="stepper-label">${label}</div></div>
-      ${line}`;
-  }).join('');
-}
-
-function wfNode(key: 'm' | 's' | 'a' | 'c', color: string, letter: string, name: string): string {
-  return `<div class="wf-node" data-agent="${key}">
-    <div class="wf-icon" style="background-color:${color}">${letter}</div>
-    <div class="wf-info"><div class="wf-name">${name}</div><div class="wf-status" data-status="${key}">待命</div></div>
-  </div>`;
-}
-
-/** 页面底部常驻的追问栏（唯一实例，挂在 .main 上，随滚动始终可见） */
-function ensureFollowDock(): HTMLElement {
-  const existing = document.getElementById('followDock');
-  if (existing) return existing;
-  const main = document.querySelector<HTMLElement>('.main')!;
-  main.insertAdjacentHTML(
-    'beforeend',
-    `
-    <div class="follow-dock hidden" id="followDock">
-      <div class="follow-hover-zone"></div>
-      <div class="follow-up">
-        <div class="follow-title">继续追问</div>
-        <div class="follow-chips"></div>
-        <div class="follow-row">
-          <label class="follow-model" title="选择追问模型">
-            <span class="model-select-wrapper">
-              <select class="model-select follow-model-select" id="followModelSelect" title="选择追问模型" aria-label="选择追问模型">
-                <option value="pro">研衡 Pro</option>
-                <option value="turbo">研衡 Turbo</option>
-                <option value="claude">Claude</option>
-                <option value="gpt">GPT-4o</option>
-              </select>
-              <svg class="model-select-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
-            </span>
-          </label>
-          <input class="follow-input" type="text" placeholder="针对本报告继续提问…" />
-          <button class="follow-send" data-act="follow">追问</button>
-        </div>
-      </div>
-    </div>`,
-  );
-  return document.getElementById('followDock')!;
-}
-
-/* ---------------- 追问消息操作：复制 / 修改 / 删除 ---------------- */
-const ICON_COPY = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>`;
-const ICON_EDIT = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>`;
-const ICON_DEL = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/></svg>`;
-
-function msgActionsHtml(editable: boolean): string {
-  return `
-    <div class="msg-actions">
-      <button class="ma-btn" data-act="copy" title="复制">${ICON_COPY}</button>
-      ${editable ? `<button class="ma-btn" data-act="edit" title="修改">${ICON_EDIT}</button>` : ''}
-      <button class="ma-btn" data-act="del" title="删除">${ICON_DEL}</button>
-    </div>`;
-}
-
-/** 追问回复消息（带模型、时间与 token / 成本） */
-function followAgentHtml(
-  label: string,
-  bullets: string[],
-  time: string,
-  model = 'pro',
-  index = -1,
-  threadId = '',
-): string {
-  const attrs = `${index >= 0 ? ` data-msg-index="${index}"` : ''}${threadId ? ` data-thread="${threadId}"` : ''}`;
-  return `
-    <div class="msg agent" data-role="follow-agent"${attrs}>
-      <div class="msg-head">
-        <div class="avatar">研</div>
-        <div class="agent-meta">
-          <div class="agent-name">研衡 Agent</div>
-          <div class="agent-domain">${esc(label)}</div>
-        </div>
-      </div>
-      <div class="follow-body"><ul class="bullets">${bullets.map((b) => `<li>${esc(b)}</li>`).join('')}</ul></div>
-      <div class="msg-foot">
-        <span class="agent-time">${esc(time)}</span>
-        <span class="msg-cost">${esc(MODEL_LABEL[model] ?? model)}</span>
-        ${usageChip(usageForModel(model))}
-        ${msgActionsHtml(false)}
-      </div>
-    </div>`;
-}
-
-function cardHtml(id: string, r: Report, depth: ReportDepth, query?: string): string {
-  const model = MODEL_LABEL[state.model] ?? state.model;
-  return `
-    <div class="research-card" data-card="${id}" data-reportid="${r.id}" data-depth="${depth}">
-      <header class="research-header">
-        <div class="header-left">
-          <div class="header-tag">Multi-Agent Topology</div>
-          <div class="header-title">${depth === 'deep' ? '正在深度调研：' : '正在调研：'}<span>${esc(query || r.domain)}</span></div>
-        </div>
-        <button class="back-btn" data-act="exit-reader">${BACK_SVG}返回调研过程</button>
-      </header>
-      <div class="main-card">
-        <div class="stepper-container">${stepperHtml(depth === 'simple' ? STEP_LABELS_SIMPLE : STEP_LABELS)}</div>
-        <div class="card-body">
-          <div class="dag-sidebar">
-            <div class="sidebar-title">${depth === 'simple' ? 'Agent 轻量流水线' : 'Agent 协同工作流'}</div>
-            <div class="workflow-container">
-              <svg class="workflow-svg"></svg>
-              ${wfNode('m', 'var(--agent-m)', 'M', 'Master 规划&写作')}
-              ${wfNode('s', 'var(--agent-s)', 'S', 'Scout 检索')}
-              ${wfNode('a', 'var(--agent-a)', 'A', 'Analyst 分析')}
-              ${wfNode('c', 'var(--agent-c)', 'C', 'Critic 审查')}
-            </div>
-          </div>
-          <div class="main-content">
-            <div class="collab-status-banner"><div class="dag-dot"></div><span class="banner-text">准备启动...</span></div>
-            <div class="document-area"></div>
-          </div>
-        </div>
-        <div class="interaction-panel">
-          <div class="interaction-header"><div class="interaction-title"></div></div>
-          <div class="interaction-input-group">
-            <input class="interaction-input" type="text" placeholder="输入修改意见（例如：增加海外市场分析、关注技术壁垒...）" />
-            <button class="btn-retry" data-act="retry">打回重写</button>
-            <button class="btn-confirm" data-act="confirm">确认，继续下一步</button>
-          </div>
-        </div>
-        <div class="card-footer">
-          <div class="msg-foot">
-            <span class="agent-time">${fmtTime(new Date())}</span>
-            ${usageChip(usageFor(depth))}
-            <span class="msg-cost">${esc(model)} · ${esc(r.updatedAt)}</span>
-          </div>
-          <button class="btn btn-disabled" data-act="reader">多 Agent 拓扑协同中...</button>
-        </div>
-      </div>
-    </div>`;
-}
 
 /* ---------------- DOM 访问助手（均限定在本卡片内） ---------------- */
 function q<T extends Element>(rt: CardRuntime, sel: string): T | null {
@@ -1468,17 +843,6 @@ function renderDone(rt: CardRuntime, metaTime?: string): void {
 /* ================================================================
  * 七、消息发送与回放
  * ================================================================ */
-function userMsgHtml(
-  text: string,
-  role: 'user' | 'follow-user' = 'user',
-  index = -1,
-  threadId = '',
-): string {
-  const attrs = `${index >= 0 ? ` data-msg-index="${index}"` : ''}${threadId ? ` data-thread="${threadId}"` : ''}`;
-  const actions = role === 'follow-user' ? msgActionsHtml(true) : '';
-  return `<div class="msg user" data-role="${role}"${attrs}><div class="user-bubble">${esc(text)}</div>${actions}</div>`;
-}
-
 function matchReport(q0: string): Report {
   const t = q0.toLowerCase();
   if (t.includes('机器人') || t.includes('具身') || t.includes('humanoid')) return reports.humanoid;
@@ -1518,13 +882,13 @@ function askFollowUp(rt: CardRuntime, raw: string): void {
   appendAfter(rt, userMsgHtml(q0, 'follow-user', baseIndex, rt.threadId));
   appendAfter(rt, followAgentHtml(reply.label, reply.bullets, time, model, baseIndex >= 0 ? baseIndex + 1 : -1, rt.threadId));
 
-  todaySpend += usage.cost;
+  setTodaySpend(todaySpend + usage.cost);
   if (activeConv) {
     activeConv.messages.push({ type: 'follow-user', text: q0 });
     activeConv.messages.push({ type: 'follow-agent', label: reply.label, bullets: reply.bullets, time, model });
   }
   saveConvs();
-  sidebarRefresh();
+  refreshSidebar();
   scrollBottom();
 }
 
@@ -1588,9 +952,9 @@ function deleteFollowMessage(msg: HTMLElement, rt: CardRuntime): void {
     activeConv.messages.splice(idx, count);
     shiftMsgIndices(idx + count, -count);
   }
-  todaySpend = Math.max(0, todaySpend - refund);
+  setTodaySpend(Math.max(0, todaySpend - refund));
   saveConvs();
-  sidebarRefresh();
+  refreshSidebar();
   toast('已删除');
 }
 
@@ -1655,9 +1019,9 @@ function editFollowMessage(msg: HTMLElement, rt: CardRuntime): void {
     const newReplyEl = msg.nextElementSibling;
     if (rt.tail === msg && newReplyEl instanceof HTMLElement) rt.tail = newReplyEl;
 
-    todaySpend = Math.max(0, todaySpend + usageForModel(model).cost - usageForModel(oldModel).cost);
+    setTodaySpend(Math.max(0, todaySpend + usageForModel(model).cost - usageForModel(oldModel).cost));
     saveConvs();
-    sidebarRefresh();
+    refreshSidebar();
     scrollBottom();
     toast('已修改并重新生成');
   });
@@ -1705,8 +1069,7 @@ export function replayConversation(conv: Conversation): void {
   chat.innerHTML = '';
   hideFollowDock();
 
-  activeConv = conv;
-  activeConvId = conv.id;
+  setActiveConv(conv);
   state.depth = conv.depth;
   setDepthUI(conv.depth);
   setDepthLocked(true);
@@ -1748,7 +1111,7 @@ export function replayConversation(conv: Conversation): void {
     }
   }
   setStatus('已完成', 'ok');
-  sidebarRefresh();
+  refreshSidebar();
   scrollToCard();
 }
 
