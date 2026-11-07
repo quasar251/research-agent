@@ -36,7 +36,7 @@ import {
  * ================================================================ */
 export type ChatMessage =
   | { type: 'user'; text: string }
-  | { type: 'research'; reportId: string; depth: ReportDepth; stage?: number }
+  | { type: 'research'; reportId: string; depth: ReportDepth; stage?: number; hitlDone?: boolean }
   | { type: 'follow-user'; text: string }
   | { type: 'follow-agent'; label: string; bullets: string[]; time: string; model?: string };
 
@@ -80,6 +80,8 @@ function normalizeMessage(raw: unknown): ChatMessage | null {
     text?: string;
     reportId?: string;
     depth?: ReportDepth;
+    stage?: number;
+    hitlDone?: boolean;
     label?: string;
     bullets?: string[];
     time?: string;
@@ -87,7 +89,7 @@ function normalizeMessage(raw: unknown): ChatMessage | null {
   };
   if (m.type === 'user' && typeof m.text === 'string') return { type: 'user', text: m.text };
   if ((m.type === 'research' || m.type === 'report') && m.reportId) {
-    return { type: 'research', reportId: m.reportId, depth: m.depth ?? 'deep', stage: m.stage };
+    return { type: 'research', reportId: m.reportId, depth: m.depth ?? 'deep', stage: m.stage, hitlDone: m.hitlDone };
   }
   if (m.type === 'follow-user' && typeof m.text === 'string') return { type: 'follow-user', text: m.text };
   if (m.type === 'follow-agent' && Array.isArray(m.bullets)) {
@@ -276,9 +278,9 @@ const AGENT_COLOR: Record<string, string> = {
   Scout: 'var(--agent-s)',
   Analyst: 'var(--agent-a)',
   Critic: 'var(--agent-c)',
-  Master: 'var(--agent-w)',
+  Master: 'var(--agent-m)',
 };
-const AGENT_LETTER: Record<string, string> = { Scout: 'S', Analyst: 'A', Critic: 'C', Master: 'W' };
+const AGENT_LETTER: Record<string, string> = { Scout: 'S', Analyst: 'A', Critic: 'C', Master: 'M' };
 
 function miniItem(html: string): string {
   return `<div class="mini-item">${html}</div>`;
@@ -503,14 +505,28 @@ interface CardRuntime {
   timers: number[];
   /** 已渲染完成的阶段数（0-5），切换会话后据此续跑 */
   resumeStage: number;
+  /** 该阶段的审批是否已确认（区分“停在审批”与“已确认继续”） */
+  resumeHitlDone: boolean;
   /** 会话中对应 research 消息的下标（用于持久化进度） */
   researchMsgIndex: number;
+  /** 所属会话（进度写回它，而非当前查看的会话） */
+  conv: Conversation | null;
 }
 
 const runtimes = new WeakMap<HTMLElement, CardRuntime>();
 const threads = new Map<string, CardRuntime>();
 /** 底部追问栏当前指向的调研卡片 */
 let activeRuntime: CardRuntime | null = null;
+/** 当前挂载中的活跃卡片（用于窗口尺寸变化时重绘拓扑连线） */
+const liveCards = new Set<CardRuntime>();
+
+// 窄屏时拓扑侧栏隐藏导致连线坐标为 0，恢复宽屏后需按实际布局重绘
+window.addEventListener('resize', () => {
+  for (const rt of liveCards) {
+    if (!rt.card.isConnected) liveCards.delete(rt);
+    else if (!rt.finished) drawLines(rt);
+  }
+});
 
 function stepperHtml(): string {
   return STEP_LABELS.map((label, i) => {
@@ -521,7 +537,7 @@ function stepperHtml(): string {
   }).join('');
 }
 
-function wfNode(key: 'w' | 's' | 'a' | 'c', color: string, letter: string, name: string): string {
+function wfNode(key: 'm' | 's' | 'a' | 'c', color: string, letter: string, name: string): string {
   return `<div class="wf-node" data-agent="${key}">
     <div class="wf-icon" style="background-color:${color}">${letter}</div>
     <div class="wf-info"><div class="wf-name">${name}</div><div class="wf-status" data-status="${key}">待命</div></div>
@@ -622,7 +638,7 @@ function cardHtml(id: string, r: Report, depth: ReportDepth): string {
             <div class="sidebar-title">Agent 协同工作流</div>
             <div class="workflow-container">
               <svg class="workflow-svg"></svg>
-              ${wfNode('w', 'var(--agent-w)', 'W', 'Master 规划&主笔')}
+              ${wfNode('m', 'var(--agent-m)', 'M', 'Master 规划&主笔')}
               ${wfNode('s', 'var(--agent-s)', 'S', 'Scout 检索')}
               ${wfNode('a', 'var(--agent-a)', 'A', 'Analyst 分析')}
               ${wfNode('c', 'var(--agent-c)', 'C', 'Critic 审查')}
@@ -811,7 +827,7 @@ function drawLines(rt: CardRuntime): void {
   const container = q(rt, '.workflow-container');
   if (!svg || !container) return;
   const nodes = {
-    w: q(rt, '.wf-node[data-agent="w"]') as HTMLElement,
+    m: q(rt, '.wf-node[data-agent="m"]') as HTMLElement,
     s: q(rt, '.wf-node[data-agent="s"]') as HTMLElement,
     a: q(rt, '.wf-node[data-agent="a"]') as HTMLElement,
     c: q(rt, '.wf-node[data-agent="c"]') as HTMLElement,
@@ -824,7 +840,7 @@ function drawLines(rt: CardRuntime): void {
       cx: r.left - cRect.left + r.width / 2, cy: r.top - cRect.top + r.height / 2,
     };
   };
-  const w = rect(nodes.w), s = rect(nodes.s), a = rect(nodes.a), c = rect(nodes.c);
+  const m = rect(nodes.m), s = rect(nodes.s), a = rect(nodes.a), c = rect(nodes.c);
 
   const createPath = (sx: number, sy: number, ex: number, ey: number, type: 'v' | 'h' = 'v') => {
     if (type === 'v') { const my = sy + (ey - sy) / 2; return `M ${sx} ${sy} L ${sx} ${my} L ${ex} ${my} L ${ex} ${ey}`; }
@@ -832,11 +848,11 @@ function drawLines(rt: CardRuntime): void {
   };
 
   const paths = [
-    { id: 'path-w-s', d: createPath(w.cx, w.y + w.h, s.cx, s.y) },
-    { id: 'path-w-a', d: createPath(w.cx, w.y + w.h, a.cx, a.y) },
+    { id: 'path-m-s', d: createPath(m.cx, m.y + m.h, s.cx, s.y) },
+    { id: 'path-m-a', d: createPath(m.cx, m.y + m.h, a.cx, a.y) },
     { id: 'path-s-a', d: createPath(s.x + s.w, s.cy, a.x, a.cy, 'h') },
     { id: 'path-a-c', d: createPath(a.cx, a.y + a.h, c.cx, c.y) },
-    { id: 'path-c-w', d: `M ${c.x} ${c.cy} L ${w.x - 20} ${c.cy} L ${w.x - 20} ${w.cy} L ${w.x} ${w.cy}` },
+    { id: 'path-c-m', d: `M ${c.x} ${c.cy} L ${m.x - 45} ${c.cy} L ${m.x - 45} ${m.cy} L ${m.x} ${m.cy}` },
   ];
 
   svg.innerHTML = `
@@ -964,13 +980,14 @@ function restoreStage(rt: CardRuntime, i: number): void {
   el.insertAdjacentHTML('beforeend', rt.stages[i].result);
 }
 
-/** 把已完成阶段数写回会话的 research 消息（切换会话后可续跑） */
-function saveStageProgress(rt: CardRuntime, n: number): void {
+/** 把进度写回所属会话的 research 消息（切换会话后可续跑） */
+function saveStageProgress(rt: CardRuntime, n: number, hitlDone: boolean): void {
   rt.resumeStage = n;
-  const idx = rt.researchMsgIndex;
-  const m = activeConv?.messages[idx];
-  if (idx >= 0 && m?.type === 'research') {
+  rt.resumeHitlDone = hitlDone;
+  const m = rt.conv?.messages[rt.researchMsgIndex];
+  if (m?.type === 'research') {
     m.stage = n;
+    m.hitlDone = hitlDone;
     saveConvs();
   }
 }
@@ -985,11 +1002,11 @@ const HITL_BANNERS = [
 function enterHitl(rt: CardRuntime, i: number): Promise<'confirmed'> {
   setStepperState(rt, i, 'waiting');
   if (i === 0) {
-    setNodeState(rt, 'w', '等待审批', 'waiting');
+    setNodeState(rt, 'm', '等待审批', 'waiting');
     setNodeState(rt, 's', '暂停等待', 'waiting');
     setNodeState(rt, 'a', '暂停等待', 'waiting');
-    setPathState(rt, 'path-w-s', 'waiting');
-    setPathState(rt, 'path-w-a', 'waiting');
+    setPathState(rt, 'path-m-s', 'waiting');
+    setPathState(rt, 'path-m-a', 'waiting');
   } else {
     setNodeState(rt, 'a', '等待审批', 'waiting');
   }
@@ -1005,7 +1022,7 @@ async function runStage(rt: CardRuntime, i: number): Promise<void> {
 
   if (i === 0) {
     setBanner(rt, '系统初始化，Master 正在拆解调研任务...');
-    setNodeState(rt, 'w', '正在拆解任务...', 'active');
+    setNodeState(rt, 'm', '正在拆解任务...', 'active');
     const el = startStage(rt, 0);
     await runWorkCard(rt, st.cards[0].title, st.cards[0].logs, st.cards[0].ms, el);
     if (!alive(rt)) return;
@@ -1013,11 +1030,10 @@ async function runStage(rt: CardRuntime, i: number): Promise<void> {
     scrollDoc(rt);
     await sleep(rt, 800);
     if (!alive(rt)) return;
-
     setBanner(rt, 'Master 分析完毕，正在将任务分发给下游 Agent...');
-    setNodeState(rt, 'w', '正在分发任务...', 'active');
-    setPathState(rt, 'path-w-s', 'flowing');
-    setPathState(rt, 'path-w-a', 'flowing');
+    setNodeState(rt, 'm', '正在分发任务...', 'active');
+    setPathState(rt, 'path-m-s', 'flowing');
+    setPathState(rt, 'path-m-a', 'flowing');
     setNodeState(rt, 's', '接收任务...', 'active');
     setNodeState(rt, 'a', '接收任务...', 'active');
     await sleep(rt, 1500);
@@ -1027,9 +1043,9 @@ async function runStage(rt: CardRuntime, i: number): Promise<void> {
   if (i === 1) {
     setBanner(rt, '用户已确认。Scout 正在全速检索数据...');
     setStatus('数据检索…', 'busy');
-    setPathState(rt, 'path-w-s', 'flowing');
-    setPathState(rt, 'path-w-a', 'idle');
-    setNodeState(rt, 'w', '执行中', 'idle');
+    setPathState(rt, 'path-m-s', 'flowing');
+    setPathState(rt, 'path-m-a', 'idle');
+    setNodeState(rt, 'm', '执行中', 'idle');
     setNodeState(rt, 's', '检索中...', 'active');
     setNodeState(rt, 'a', '待命', 'idle');
     const el = startStage(rt, 1);
@@ -1037,7 +1053,7 @@ async function runStage(rt: CardRuntime, i: number): Promise<void> {
     if (!alive(rt)) return;
 
     setBanner(rt, 'Scout 检索完成，正将数据传给 Analyst...');
-    setPathState(rt, 'path-w-s', 'idle');
+    setPathState(rt, 'path-m-s', 'idle');
     setPathState(rt, 'path-s-a', 'flowing');
     setNodeState(rt, 's', '交接完成', 'idle');
     setNodeState(rt, 'a', '整理数据...', 'active');
@@ -1073,12 +1089,11 @@ async function runStage(rt: CardRuntime, i: number): Promise<void> {
     if (!alive(rt)) return;
     el.insertAdjacentHTML('beforeend', st.result);
     scrollDoc(rt);
-
     setBanner(rt, 'Critic 审查完毕，已抄送 Master...');
     setPathState(rt, 'path-a-c', 'idle');
-    setPathState(rt, 'path-c-w', 'flowing');
+    setPathState(rt, 'path-c-m', 'flowing');
     setNodeState(rt, 'c', '审查完毕', 'idle');
-    setNodeState(rt, 'w', '接收反馈', 'active');
+    setNodeState(rt, 'm', '接收反馈', 'active');
     await sleep(rt, 1500);
     return;
   }
@@ -1086,8 +1101,8 @@ async function runStage(rt: CardRuntime, i: number): Promise<void> {
   // i === 4
   setBanner(rt, 'Master 正在整合最终报告...');
   setStatus('生成报告…', 'busy');
-  setPathState(rt, 'path-c-w', 'idle');
-  setNodeState(rt, 'w', '排版中...', 'active');
+  setPathState(rt, 'path-c-m', 'idle');
+  setNodeState(rt, 'm', '排版中...', 'active');
   const el = startStage(rt, 4);
   await runWorkCard(rt, st.cards[0].title, st.cards[0].logs, st.cards[0].ms, el);
   if (!alive(rt)) return;
@@ -1108,21 +1123,22 @@ async function runDag(rt: CardRuntime): Promise<void> {
   }
 
   // 上次停在审批点：直接恢复审批面板，不重跑已完成阶段
-  if (from > 0 && from <= 3 && rt.stages[from - 1].hitl) {
+  if (from >= 1 && from <= 3 && rt.stages[from - 1].hitl && !rt.resumeHitlDone) {
     await enterHitl(rt, from - 1);
     if (!alive(rt)) return;
-    setStepperState(rt, from - 1, 'completed');
+    saveStageProgress(rt, from, true);
   }
 
   for (let i = from; i < 5; i++) {
     await runStage(rt, i);
     if (!alive(rt)) return;
-    saveStageProgress(rt, i + 1);
 
     const hitl = rt.stages[i].hitl;
+    saveStageProgress(rt, i + 1, false);
     if (hitl) {
       await enterHitl(rt, i);
       if (!alive(rt)) return;
+      saveStageProgress(rt, i + 1, true);
     }
     setStepperState(rt, i, 'completed');
   }
@@ -1133,9 +1149,10 @@ async function runDag(rt: CardRuntime): Promise<void> {
 function finishCard(rt: CardRuntime): void {
   rt.finished = true;
   rt.waiting = false;
+  saveStageProgress(rt, 5, true);
   setStepperState(rt, 4, 'completed');
   setBanner(rt, '', false);
-  setNodeState(rt, 'w', '生成完毕', 'idle');
+  setNodeState(rt, 'm', '生成完毕', 'idle');
   closePanel(rt);
   const btn = footerBtn(rt);
   btn.className = 'btn btn-ready';
@@ -1180,20 +1197,33 @@ function toast(text: string): void {
 }
 
 /* ---------------- 挂载卡片 ---------------- */
-function mountCard(report: Report, depth: ReportDepth, finished: boolean, metaTime?: string): CardRuntime {
+interface MountOpts {
+  /** 已完成阶段数（0-5），>0 且 <5 时从该处续跑 */
+  stage?: number;
+  hitlDone?: boolean;
+  /** 所属会话与 research 消息下标（进度持久化目标） */
+  conv?: Conversation | null;
+  msgIndex?: number;
+}
+
+function mountCard(report: Report, depth: ReportDepth, finished: boolean, metaTime?: string, opts: MountOpts = {}): CardRuntime {
   const chat = document.getElementById('chat')!;
   const id = `${report.id}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
   chat.insertAdjacentHTML('beforeend', cardHtml(id, report, depth));
   const card = chat.querySelector<HTMLElement>(`.research-card[data-card="${id}"]`)!;
+  const resumeStage = Math.min(Math.max(opts.stage ?? 0, 0), 5);
   const rt: CardRuntime = {
     card, report, depth, stages: buildStages(report, depth), index: 0, waiting: false, finished: false,
     tail: card, threadId: id, hitlResolve: null, stageEls: [], wcSeq: 0, timers: [],
+    resumeStage, resumeHitlDone: opts.hitlDone ?? false,
+    researchMsgIndex: opts.msgIndex ?? -1, conv: opts.conv ?? null,
   };
   runtimes.set(card, rt);
   threads.set(id, rt);
+  liveCards.add(rt);
   activeRuntime = rt;
 
-  if (finished) {
+  if (finished || resumeStage >= 5) {
     renderDone(rt, metaTime);
   } else {
     window.setTimeout(() => runDag(rt), 300);
@@ -1211,7 +1241,7 @@ function renderDone(rt: CardRuntime, metaTime?: string): void {
     `<div class="doc-content" data-stage="${i}"><div class="doc-h2">${esc(st.title)}</div>${st.result}</div>`,
   ).join('');
   for (let i = 0; i < 5; i++) setStepperState(rt, i, 'completed');
-  setNodeState(rt, 'w', '生成完毕', 'idle');
+  setNodeState(rt, 'm', '生成完毕', 'idle');
   rt.index = rt.stages.length;
   rt.finished = true;
   rt.waiting = false;
@@ -1434,12 +1464,14 @@ export function sendMessage(text: string): void {
   const depth = state.depth;
   const conv = recordConversation(report, depth);
   conv.messages.push({ type: 'user', text: query });
-  conv.messages.push({ type: 'research', reportId: report.id, depth });
+  conv.messages.push({ type: 'research', reportId: report.id, depth, stage: 0 });
   saveConvs();
 
   setDepthLocked(true);
   hideFollowDock();
-  mountCard(report, depth, false);
+  mountCard(report, depth, false, undefined, {
+    stage: 0, conv, msgIndex: conv.messages.length - 1,
+  });
   scrollBottom();
 }
 
@@ -1481,7 +1513,11 @@ export function replayConversation(conv: Conversation): void {
     } else {
       const report = reports[msg.reportId];
       if (!report) continue;
-      thread = mountCard(report, msg.depth, true, conv.time);
+      const stage = msg.stage ?? 5;
+      // 未完成的历史卡片：从已保存的阶段续跑；已完成则直接渲染完成态
+      thread = mountCard(report, msg.depth, stage >= 5, conv.time, {
+        stage, hitlDone: msg.hitlDone ?? false, conv, msgIndex: i,
+      });
     }
   }
   setStatus('已完成', 'ok');

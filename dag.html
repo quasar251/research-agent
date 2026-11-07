@@ -98,13 +98,13 @@
         @keyframes flow { to { stroke-dashoffset: -12; } }
 
         .wf-node {
-            position: absolute; z-index: 2; display: flex; align-items: center; gap: 12px;
-            background: var(--white); border: 1px solid var(--border-color); padding: 10px 14px; border-radius: 12px;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.02); transition: all 0.4s ease; transform: translate(-50%, 0); width: 160px;
+            position: absolute; z-index: 2; display: flex; align-items: center; gap: 8px;
+            background: var(--white); border: 1px solid var(--border-color); padding: 9px 11px; border-radius: 12px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.02); transition: all 0.4s ease; transform: translate(-50%, 0); width: 150px;
         }
-        .wf-icon { width: 32px; height: 32px; border-radius: 8px; display: flex; align-items: center; justify-content: center; color: white; font-size: 14px; font-weight: 800; flex-shrink: 0; }
+        .wf-icon { width: 28px; height: 28px; border-radius: 8px; display: flex; align-items: center; justify-content: center; color: white; font-size: 13px; font-weight: 800; flex-shrink: 0; }
         .wf-info { display: flex; flex-direction: column; gap: 2px; flex: 1; overflow: hidden; }
-        .wf-name { font-size: 13px; font-weight: 700; color: var(--text-main); white-space: nowrap; }
+        .wf-name { font-size: 12.5px; font-weight: 700; color: var(--text-main); white-space: nowrap; }
         .wf-status { font-size: 11px; color: var(--text-muted); white-space: nowrap; transition: color 0.3s; overflow: hidden; text-overflow: ellipsis; }
         
         .wf-node.active { border-color: var(--primary); box-shadow: 0 4px 16px var(--primary-glow); transform: translate(-50%, 0) scale(1.02); }
@@ -113,8 +113,8 @@
         .wf-node.waiting .wf-status { color: var(--warning); font-weight: 600; }
         
         #wf-w { top: 8%; left: 50%; }
-        #wf-s { top: 42%; left: 22%; }
-        #wf-a { top: 42%; left: 78%; }
+        #wf-s { top: 42%; left: 20%; }
+        #wf-a { top: 42%; left: 80%; }
         #wf-c { top: 76%; left: 50%; }
 
         /* ================= 右侧：主工作区 ================= */
