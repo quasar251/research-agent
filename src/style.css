@@ -738,6 +738,217 @@ button {
   gap: 12px;
 }
 
+/* ---------------- 对话主卡片（玻璃拟态 + 思考过程侧栏） ---------------- */
+.msg.agent.report-card {
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  background: var(--glass);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid var(--glass-line);
+  border-radius: 24px;
+  box-shadow: var(--glass-shadow);
+  overflow: hidden;
+}
+
+/* 追问回复：轻量卡片，与主卡片协调 */
+.msg.agent[data-role='follow-agent'] {
+  padding: 20px 24px;
+  background: var(--glass);
+  border: 1px solid var(--glass-line);
+  border-radius: 16px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.05);
+}
+
+.global-progress {
+  height: 3px;
+  flex-shrink: 0;
+  background: var(--progress-track);
+  position: relative;
+}
+
+.global-progress-fill {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  width: 0;
+  background: linear-gradient(90deg, var(--gold), var(--accent));
+  transition: width 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.card-body {
+  display: flex;
+  align-items: stretch;
+}
+
+.thinking-sidebar {
+  width: 280px;
+  flex-shrink: 0;
+  background: var(--side-bg);
+  border-right: 1px solid var(--card-line);
+  padding: 30px 24px;
+}
+
+.sidebar-title {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  color: var(--ink-faint);
+  margin-bottom: 28px;
+}
+
+.steps-container {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 26px;
+}
+
+.steps-container::before {
+  content: '';
+  position: absolute;
+  top: 10px;
+  bottom: 10px;
+  left: 9px;
+  width: 2px;
+  background: var(--step-line);
+}
+
+.step-item {
+  display: flex;
+  gap: 14px;
+  position: relative;
+  z-index: 1;
+}
+
+.step-icon {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  margin-top: 1px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--doc-bg);
+  border: 2px solid var(--step-line);
+  transition: all 0.3s;
+}
+
+.step-item.active .step-icon {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  box-shadow: 0 0 0 4px var(--accent-soft);
+}
+
+.step-item.active .step-icon::after {
+  content: '';
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--accent);
+  animation: stepPulse 1.5s infinite;
+}
+
+.step-item.completed .step-icon {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.step-item.completed .step-icon::after {
+  content: '';
+  width: 4px;
+  height: 8px;
+  border: solid var(--send-ink);
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg) translate(-1px, -1px);
+}
+
+@keyframes stepPulse {
+  0%, 100% { transform: scale(0.8); opacity: 0.5; }
+  50% { transform: scale(1.2); opacity: 1; }
+}
+
+.step-content {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.step-name {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--ink-faint);
+  white-space: nowrap;
+  transition: color 0.3s;
+}
+
+.step-item.active .step-name {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.step-item.completed .step-name {
+  color: var(--ink);
+}
+
+.step-status-text {
+  font-size: 11px;
+  color: var(--ink-faint);
+  line-height: 1.5;
+}
+
+.document-area {
+  flex: 1;
+  min-width: 0;
+  padding: 28px 32px 32px;
+  background: var(--doc-bg);
+}
+
+.card-footer {
+  padding: 16px 32px 20px;
+  border-top: 1px solid var(--card-line);
+  background: var(--side-bg);
+}
+
+.report-card .msg-foot {
+  margin-top: 0;
+}
+
+.report-card .follow-up {
+  margin-top: 16px;
+  background: var(--card);
+  border-color: var(--card-line);
+}
+
+@media (max-width: 840px) {
+  .card-body {
+    flex-direction: column;
+  }
+  .thinking-sidebar {
+    width: 100%;
+    border-right: none;
+    border-bottom: 1px solid var(--card-line);
+    padding: 20px 18px;
+  }
+  .steps-container {
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 14px;
+  }
+  .steps-container::before {
+    display: none;
+  }
+  .document-area {
+    padding: 20px 18px 24px;
+  }
+  .card-footer {
+    padding: 14px 18px 18px;
+  }
+}
+
 /* Pipeline · 四阶段 DAG */
 .pipeline {
   display: flex;

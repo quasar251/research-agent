@@ -290,6 +290,14 @@ function renderMessages(messages: ChatMessage[]): void {
     el.classList.remove('pending', 'running');
     el.classList.add('done');
   });
+  chat.querySelectorAll<HTMLElement>('.step-item').forEach((el) => {
+    el.classList.add('completed');
+    const t = el.querySelector<HTMLElement>('.step-status-text');
+    if (t) t.textContent = '已完成';
+  });
+  chat.querySelectorAll<HTMLElement>('.global-progress-fill').forEach((el) => {
+    el.style.width = '100%';
+  });
   setStatus('已完成', 'ok');
   scrollBottom();
 }
