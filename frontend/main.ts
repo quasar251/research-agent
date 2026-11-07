@@ -285,6 +285,7 @@ if (savedTheme === 'light') {
 app.innerHTML = shell();
 applySidebar(sidebarPinned);
 setSidebarRefresh(renderSidebar);
+setTasksRefresh(renderSidebar);
 const chat = document.getElementById('chat')!;
 chat.innerHTML = welcomeHtml(suggestions);
 floatComposer();
