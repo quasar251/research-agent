@@ -2986,7 +2986,8 @@ button {
 }
 
 .main-card .card-body {
-  height: 620px;
+  height: min(620px, calc(100vh - 330px));
+  min-height: 360px;
   transition: height 0.6s ease;
 }
 
@@ -3456,7 +3457,496 @@ button {
   filter: brightness(1.08);
 }
 
+/* ================================================================
+ * 多 Agent 协同 DAG（调研过程：Stepper + 拓扑侧栏 + 流式执行卡片）
+ * 全部限定在 .research-card 内，变量随主题切换
+ * ================================================================ */
+.research-card {
+  --dag-primary: var(--accent);
+  --dag-warning: var(--gold);
+  --dag-success: var(--success);
+  --agent-w: var(--accent);
+  --agent-s: #5c8fb3;
+  --agent-a: #8b6fae;
+  --agent-c: var(--gold);
+}
+
+/* ---------------- 顶部横向流程节点 ---------------- */
+.research-card .stepper-container {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 32px;
+  border-bottom: 1px solid var(--card-line);
+  background: var(--side-bg);
+}
+
+.research-card .stepper-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  position: relative;
+  z-index: 2;
+  flex-shrink: 0;
+}
+
+.research-card .stepper-dot {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--bg-elev);
+  border: 2px solid var(--line-strong);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--ink-faint);
+  font-size: 12px;
+  font-weight: bold;
+  transition: all 0.4s ease;
+}
+
+.research-card .stepper-label {
+  font-size: 12.5px;
+  color: var(--ink-faint);
+  font-weight: 500;
+  transition: all 0.4s ease;
+  white-space: nowrap;
+}
+
+.research-card .stepper-line {
+  flex: 1;
+  height: 2px;
+  background-color: var(--line-strong);
+  margin: 0 10px;
+  position: relative;
+  top: -12px;
+  z-index: 1;
+  transition: all 0.4s ease;
+}
+
+.research-card .stepper-item.active .stepper-dot {
+  border-color: var(--dag-primary);
+  background: var(--accent-soft);
+  box-shadow: 0 0 0 4px var(--accent-soft);
+}
+.research-card .stepper-item.active .stepper-dot::after {
+  content: '';
+  width: 8px;
+  height: 8px;
+  background: var(--dag-primary);
+  border-radius: 50%;
+  animation: dag-pulse 1.5s infinite;
+}
+.research-card .stepper-item.active .stepper-label {
+  color: var(--dag-primary);
+  font-weight: 600;
+}
+
+.research-card .stepper-item.waiting .stepper-dot {
+  border-color: var(--dag-warning);
+  background: rgba(201, 162, 39, 0.12);
+  animation: dag-border-flash 1s infinite alternate;
+}
+.research-card .stepper-item.waiting .stepper-label {
+  color: var(--dag-warning);
+  font-weight: 600;
+}
+
+.research-card .stepper-item.completed .stepper-dot {
+  border-color: var(--dag-success);
+  background: var(--dag-success);
+  color: #fff;
+}
+.research-card .stepper-item.completed .stepper-label {
+  color: var(--ink);
+}
+
+.research-card .stepper-line.completed {
+  background-color: var(--dag-success);
+}
+.research-card .stepper-line.active-line {
+  background: linear-gradient(90deg, var(--dag-primary) 50%, var(--line-strong) 50%);
+  background-size: 200% 100%;
+  animation: dag-line-flow 2s linear infinite;
+}
+
+@keyframes dag-pulse {
+  0% { opacity: 0.5; transform: scale(0.8); }
+  50% { opacity: 1; transform: scale(1.2); }
+  100% { opacity: 0.5; transform: scale(0.8); }
+}
+@keyframes dag-border-flash {
+  from { border-color: var(--dag-warning); }
+  to { border-color: var(--dag-warning); box-shadow: 0 0 0 4px rgba(201, 162, 39, 0.3); }
+}
+@keyframes dag-line-flow {
+  0% { background-position: 100% 0; }
+  100% { background-position: -100% 0; }
+}
+
+/* ---------------- 左侧：拓扑图 ---------------- */
+.research-card .dag-sidebar {
+  width: 340px;
+  flex-shrink: 0;
+  background: var(--side-bg);
+  border-right: 1px solid var(--card-line);
+  padding: 26px 24px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  transition: width 0.6s cubic-bezier(0.16, 1, 0.3, 1), padding 0.6s;
+}
+
+.research-card.reader-mode .dag-sidebar {
+  width: 0;
+  padding: 0;
+  border-right: none;
+}
+
+.research-card .workflow-container {
+  position: relative;
+  width: 100%;
+  flex: 1;
+  min-width: 280px;
+}
+
+.research-card .workflow-svg {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.research-card .path-line {
+  fill: none;
+  stroke: var(--line-strong);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  transition: stroke 0.4s, stroke-width 0.4s;
+}
+.research-card .path-line.active {
+  stroke: var(--dag-primary);
+  stroke-width: 2.5;
+}
+.research-card .path-line.flowing {
+  stroke-dasharray: 6 4;
+  animation: dag-flow 1s linear infinite;
+}
+.research-card .path-line.waiting-dashed {
+  stroke: var(--dag-warning);
+  stroke-width: 2;
+  stroke-dasharray: 6 6;
+  animation: dag-flow 2s linear infinite;
+}
+@keyframes dag-flow {
+  to { stroke-dashoffset: -12; }
+}
+
+.research-card .wf-node {
+  position: absolute;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--bg-elev);
+  border: 1px solid var(--card-line);
+  padding: 9px 12px;
+  border-radius: 12px;
+  box-shadow: var(--card-shadow);
+  transition: all 0.4s ease;
+  transform: translate(-50%, 0);
+  width: 150px;
+}
+.research-card .wf-icon {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  font-size: 13px;
+  font-weight: 800;
+  flex-shrink: 0;
+}
+.research-card .wf-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  overflow: hidden;
+}
+.research-card .wf-name {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--ink);
+  white-space: nowrap;
+}
+.research-card .wf-status {
+  font-size: 10.5px;
+  color: var(--ink-faint);
+  white-space: nowrap;
+  transition: color 0.3s;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.research-card .wf-node.active {
+  border-color: var(--dag-primary);
+  box-shadow: 0 4px 16px var(--accent-soft);
+  transform: translate(-50%, 0) scale(1.02);
+}
+.research-card .wf-node.active .wf-status {
+  color: var(--dag-primary);
+  font-weight: 600;
+}
+.research-card .wf-node.waiting {
+  border-color: var(--dag-warning);
+  box-shadow: 0 4px 16px rgba(201, 162, 39, 0.2);
+}
+.research-card .wf-node.waiting .wf-status {
+  color: var(--dag-warning);
+  font-weight: 600;
+}
+
+.research-card .wf-node[data-agent='w'] { top: 6%; left: 50%; }
+.research-card .wf-node[data-agent='s'] { top: 40%; left: 24%; }
+.research-card .wf-node[data-agent='a'] { top: 40%; left: 76%; }
+.research-card .wf-node[data-agent='c'] { top: 74%; left: 50%; }
+
+/* ---------------- 右侧：主工作区 ---------------- */
+.research-card .main-content {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  background: var(--doc-bg);
+  overflow: hidden;
+}
+
+.research-card .collab-status-banner {
+  height: 0;
+  overflow: hidden;
+  background: var(--side-bg);
+  border-bottom: 1px solid var(--card-line);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  font-size: 12.5px;
+  color: var(--ink);
+  font-weight: 500;
+  transition: height 0.4s ease;
+  flex-shrink: 0;
+}
+.research-card .collab-status-banner.show {
+  height: 40px;
+}
+.research-card .collab-status-banner .dag-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--dag-primary);
+  animation: dag-pulse 1.5s infinite;
+  flex-shrink: 0;
+}
+
+/* ---------------- 阶段结果条目 ---------------- */
+.research-card .mini-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 4px;
+}
+.research-card .mini-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--ink-dim);
+  padding: 10px 14px;
+  background: var(--bg-elev);
+  border: 1px solid var(--card-line);
+  border-radius: 8px;
+}
+.research-card .mini-item strong {
+  color: var(--ink);
+  font-weight: 600;
+}
+.research-card .mini-icon {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 5px;
+  color: white;
+  font-size: 11px;
+  font-weight: 800;
+  margin-top: 1px;
+}
+
+/* ---------------- 长任务执行卡片 ---------------- */
+.research-card .work-card {
+  border: 1px dashed var(--accent-soft);
+  background: var(--bg-elev);
+  border-radius: 12px;
+  padding: 14px 18px;
+}
+.research-card .work-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.research-card .dag-spinner {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 2px solid var(--line-strong);
+  border-top-color: var(--dag-primary);
+  animation: dag-spin 0.8s linear infinite;
+  flex-shrink: 0;
+}
+@keyframes dag-spin {
+  to { transform: rotate(360deg); }
+}
+.research-card .work-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--dag-primary);
+  flex: 1;
+}
+.research-card .work-elapsed {
+  font-size: 12px;
+  color: var(--ink-faint);
+  font-family: var(--mono);
+}
+.research-card .work-progress {
+  height: 4px;
+  background: var(--progress-track);
+  border-radius: 99px;
+  margin: 12px 0;
+  overflow: hidden;
+}
+.research-card .work-progress-fill {
+  height: 100%;
+  width: 0;
+  background: var(--dag-primary);
+  border-radius: 99px;
+  transition: width 0.4s linear, background-color 0.4s ease;
+}
+.research-card .work-log {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--ink-dim);
+  font-family: var(--mono);
+}
+.research-card .work-log .log-line {
+  opacity: 0;
+  animation: fadeInDoc 0.4s forwards;
+}
+.research-card .work-log .log-time {
+  color: var(--ink-faint);
+  margin-right: 8px;
+}
+.research-card .work-check {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--dag-success);
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  flex-shrink: 0;
+}
+.research-card .work-card.done {
+  border-style: solid;
+  border-color: rgba(127, 160, 98, 0.35);
+}
+.research-card .work-card.done .work-title {
+  color: var(--dag-success);
+}
+.research-card .work-card.done .work-progress-fill {
+  background: var(--dag-success);
+}
+
+/* ---------------- 打回重写 Loading 条 ---------------- */
+.research-card .loading-bar-container {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin-top: 12px;
+}
+.research-card .loading-bar {
+  height: 16px;
+  background-color: var(--bg-elev2);
+  border-radius: 6px;
+  position: relative;
+  overflow: hidden;
+}
+.research-card .loading-bar.short {
+  width: 60%;
+}
+.research-card .loading-bar::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, var(--accent-soft), transparent);
+  transform: translateX(-100%);
+  animation: shimmer 1.5s infinite;
+}
+
+/* ---------------- DAG 版 SWOT 卡片 ---------------- */
+.research-card .swot-card {
+  padding: 14px 16px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: var(--bg-elev);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.research-card .swot-title {
+  font-size: 13px;
+  font-weight: 700;
+}
+.research-card .swot-list {
+  font-size: 12px;
+  line-height: 1.6;
+  padding-left: 16px;
+  color: var(--ink-dim);
+}
+.research-card .swot-s .swot-title { color: var(--green); }
+.research-card .swot-w .swot-title { color: var(--accent); }
+.research-card .swot-o .swot-title { color: #5c8fb3; }
+.research-card .swot-t .swot-title { color: var(--ink-faint); }
+
 @media (max-width: 840px) {
+  .research-card .dag-sidebar {
+    display: none;
+  }
+  .research-card .stepper-container {
+    padding: 14px 16px;
+  }
+  .research-card .stepper-label {
+    font-size: 10.5px;
+  }
+  .research-card .stepper-line {
+    margin: 0 4px;
+  }
   .research-header {
     align-items: flex-start;
   }
