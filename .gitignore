@@ -5,6 +5,7 @@ node_modules/
 dist/
 dist-ssr/
 build/
+docs/
 
 # 日志
 *.log

@@ -338,8 +338,9 @@ interface StageDef {
   hitl: string | null;
 }
 
-/** 构建五阶段内容（数据驱动自 report） */
+/** 构建五阶段内容（数据驱动自 report）；简单模式走三阶段轻量管线 */
 function buildStages(r: Report, depth: ReportDepth): StageDef[] {
+  if (depth === 'simple') return buildSimpleStages(r);
   const cites = r.citations.slice(0, 4);
   const docList = cites.map((c) => `《${c.title}》`).join('、');
   const swotSection = findSection(r, depth, ['swot']);
@@ -475,12 +476,104 @@ function buildStages(r: Report, depth: ReportDepth): StageDef[] {
   return [stage1, stage2, stage3, stage4, stage5];
 }
 
+/**
+ * 简单模式：三阶段轻量管线（规划与检索 → 速览分析 → 核验与报告）。
+ * 不设审批闸口、日志与卡片数量精简，产出为基础章节 + 核心结论，
+ * 总耗时约为深度模式的三分之一。
+ */
+function buildSimpleStages(r: Report): StageDef[] {
+  const overview = findSection(r, 'simple', ['prose']);
+  const marketSection = findSection(r, 'simple', ['chart', 'bars']);
+  const insight = r.takeaways[0]?.text ?? r.summary;
+  const keyDocs = r.citations
+    .slice(0, 2)
+    .map((c) => `《${c.title}》`)
+    .join('、');
+
+  const stage1: StageDef = {
+    title: '阶段一 · 规划与检索',
+    cards: [
+      {
+        title: 'Master 正在快速规划...',
+        logs: [
+          `解析调研主题：${r.topic}…`,
+          '圈定 3 项轻量任务（概述 / 数据 / 结论）…',
+        ],
+        ms: 2200,
+      },
+      {
+        title: 'Scout 正在检索关键数据...',
+        logs: [
+          '检索行业报告库与厂商财报…命中 18 条',
+          '可信度过滤…保留 12 条有效信息源',
+        ],
+        ms: 3200,
+      },
+    ],
+    result: `<div class="mini-list">
+      ${miniItem('<strong>检索渠道：</strong>行业报告库、厂商官网财报')}
+      ${miniItem(`<strong>关键文档：</strong>${esc(keyDocs)}`)}
+      ${miniItem('<strong>数据产出：</strong>12 条有效信息源（轻量口径）')}
+    </div>`,
+    hitl: null,
+  };
+
+  const stage2: StageDef = {
+    title: '阶段二 · 速览分析',
+    cards: [
+      {
+        title: 'Analyst 正在速览分析...',
+        logs: ['提取市场规模与增长率…', '概括竞争格局要点…'],
+        ms: 3000,
+      },
+    ],
+    result: `<div class="mini-list">
+      ${miniItem(`<strong>市场数据：</strong>${esc(marketSection?.heading ?? '市场规模')} 速览`)}
+      ${miniItem(`<strong>速览结论：</strong>${esc(overview?.paragraphs?.[0] ?? r.summary)}`)}
+    </div>`,
+    hitl: null,
+  };
+
+  const stage3: StageDef = {
+    title: '阶段三 · 核验与报告',
+    cards: [
+      {
+        title: 'Critic 正在快速核验...',
+        logs: ['抽查关键数据出处…通过'],
+        ms: 1600,
+      },
+      {
+        title: 'Master 正在整合报告...',
+        logs: ['按「概述 → 数据 → 结论」三段排版…', '生成引用索引…'],
+        ms: 2400,
+      },
+    ],
+    result: `<div class="doc-h2" style="margin-top:20px;">核心结论</div>
+      <div class="doc-text" style="background-color:var(--bg-elev);padding:16px;border-radius:12px;border-left:3px solid var(--dag-primary);">
+        <strong>研衡速览结论：</strong>${esc(insight)}
+      </div>
+      <div class="mini-list">${r.citations
+        .slice(0, 2)
+        .map(
+          (c, i) =>
+            miniItem(
+              `<strong>[${i + 1}]</strong> ${esc(c.title)} <span class="strength strength-${c.strength}">${STRENGTH_LABEL[c.strength]}</span> · ${esc(c.source)}`,
+            ),
+        )
+        .join('')}</div>`,
+    hitl: null,
+  };
+
+  return [stage1, stage2, stage3];
+}
+
 /* ================================================================
  * 四、卡片骨架与运行时
  * ================================================================ */
 const BACK_SVG = `<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>`;
 
 const STEP_LABELS = ['任务拆解', '数据检索', '深度分析', '交叉审查', '生成报告'];
+const STEP_LABELS_SIMPLE = ['规划检索', '速览分析', '核验报告'];
 
 interface CardRuntime {
   card: HTMLElement;
@@ -536,9 +629,9 @@ window.addEventListener('resize', () => {
   }
 });
 
-function stepperHtml(): string {
-  return STEP_LABELS.map((label, i) => {
-    const line = i < STEP_LABELS.length - 1 ? `<div class="stepper-line" data-line="${i}"></div>` : '';
+function stepperHtml(labels: string[] = STEP_LABELS): string {
+  return labels.map((label, i) => {
+    const line = i < labels.length - 1 ? `<div class="stepper-line" data-line="${i}"></div>` : '';
     return `
       <div class="stepper-item" data-step="${i}"><div class="stepper-dot">${i + 1}</div><div class="stepper-label">${label}</div></div>
       ${line}`;
@@ -636,15 +729,15 @@ function cardHtml(id: string, r: Report, depth: ReportDepth, query?: string): st
       <header class="research-header">
         <div class="header-left">
           <div class="header-tag">Multi-Agent Topology</div>
-          <div class="header-title">正在深度调研：<span>${esc(query || r.domain)}</span></div>
+          <div class="header-title">${depth === 'deep' ? '正在深度调研：' : '正在调研：'}<span>${esc(query || r.domain)}</span></div>
         </div>
         <button class="back-btn" data-act="exit-reader">${BACK_SVG}返回调研过程</button>
       </header>
       <div class="main-card">
-        <div class="stepper-container">${stepperHtml()}</div>
+        <div class="stepper-container">${stepperHtml(depth === 'simple' ? STEP_LABELS_SIMPLE : STEP_LABELS)}</div>
         <div class="card-body">
           <div class="dag-sidebar">
-            <div class="sidebar-title">Agent 协同工作流</div>
+            <div class="sidebar-title">${depth === 'simple' ? 'Agent 轻量流水线' : 'Agent 协同工作流'}</div>
             <div class="workflow-container">
               <svg class="workflow-svg"></svg>
               ${wfNode('m', 'var(--agent-m)', 'M', 'Master 规划&写作')}
@@ -796,6 +889,16 @@ function hideFollowDock(): void {
   document.getElementById('followDock')?.classList.add('hidden');
 }
 
+/** 供控制台等外部视图查询：当前是否仍有调研在跑 */
+export function isResearchRunning(): boolean {
+  return activeRuntime !== null && !activeRuntime.finished;
+}
+
+/** 供控制台关闭后恢复追问栏（仅当活跃卡片已完成） */
+export function restoreFollowDock(): void {
+  if (activeRuntime?.finished) showFollowUp(activeRuntime);
+}
+
 function openPanel(rt: CardRuntime, hint: string): void {
   const panel = q(rt, '.interaction-panel');
   const title = q(rt, '.interaction-title');
@@ -856,13 +959,22 @@ function drawLines(rt: CardRuntime): void {
     const mx = sx + (ex - sx) / 2; return `M ${sx} ${sy} L ${mx} ${sy} L ${mx} ${ey} L ${ex} ${ey}`;
   };
 
-  const paths = [
-    { id: 'path-m-s', d: createPath(m.cx, m.y + m.h, s.cx, s.y) },
-    { id: 'path-m-a', d: createPath(m.cx, m.y + m.h, a.cx, a.y) },
-    { id: 'path-s-a', d: createPath(s.x + s.w, s.cy, a.x, a.cy, 'h') },
-    { id: 'path-a-c', d: createPath(a.cx, a.y + a.h, c.cx, c.y) },
-    { id: 'path-c-m', d: `M ${c.x} ${c.cy} L ${m.x - 45} ${c.cy} L ${m.x - 45} ${m.cy} L ${m.x} ${m.cy}` },
-  ];
+  /* 简单模式：线性流水线拓扑 M → S → A → C →（反馈）→ M */
+  const isSimple = rt.card.dataset.depth === 'simple';
+  const paths = isSimple
+    ? [
+        { id: 'path-m-s', d: `M ${m.cx} ${m.y + m.h} L ${s.cx} ${s.y}` },
+        { id: 'path-s-a', d: `M ${s.cx} ${s.y + s.h} L ${a.cx} ${a.y}` },
+        { id: 'path-a-c', d: `M ${a.cx} ${a.y + a.h} L ${c.cx} ${c.y}` },
+        { id: 'path-c-m', d: `M ${c.x} ${c.cy} L ${m.x - 45} ${c.cy} L ${m.x - 45} ${m.cy} L ${m.x} ${m.cy}` },
+      ]
+    : [
+        { id: 'path-m-s', d: createPath(m.cx, m.y + m.h, s.cx, s.y) },
+        { id: 'path-m-a', d: createPath(m.cx, m.y + m.h, a.cx, a.y) },
+        { id: 'path-s-a', d: createPath(s.x + s.w, s.cy, a.x, a.cy, 'h') },
+        { id: 'path-a-c', d: createPath(a.cx, a.y + a.h, c.cx, c.y) },
+        { id: 'path-c-m', d: `M ${c.x} ${c.cy} L ${m.x - 45} ${c.cy} L ${m.x - 45} ${m.cy} L ${m.x} ${m.cy}` },
+      ];
 
   svg.innerHTML = `
     <defs>
@@ -1029,6 +1141,64 @@ async function runStage(rt: CardRuntime, i: number): Promise<void> {
   setStepperState(rt, i, 'active');
   const st = rt.stages[i];
 
+  /* 简单模式：三阶段轻量管线的编排 */
+  if (rt.depth === 'simple') {
+    if (i === 0) {
+      setStatus('规划与检索…', 'busy');
+      setBanner(rt, 'Master 快速拆解任务，Scout 同步检索...');
+      setNodeState(rt, 'm', '规划中...', 'active');
+      const el = startStage(rt, 0);
+      await runWorkCard(rt, st.cards[0].title, st.cards[0].logs, st.cards[0].ms, el);
+      if (!alive(rt)) return;
+      setBanner(rt, '计划就绪，Scout 正在检索关键数据...');
+      setPathState(rt, 'path-m-s', 'flowing');
+      setNodeState(rt, 'm', '计划就绪', 'idle');
+      setNodeState(rt, 's', '检索中...', 'active');
+      await runWorkCard(rt, st.cards[1].title, st.cards[1].logs, st.cards[1].ms, el);
+      if (!alive(rt)) return;
+      el.insertAdjacentHTML('beforeend', st.result);
+      scrollDoc(rt);
+      setPathState(rt, 'path-m-s', 'idle');
+      setNodeState(rt, 's', '检索完成', 'idle');
+      await sleep(rt, 600);
+      return;
+    }
+    if (i === 1) {
+      setStatus('速览分析…', 'busy');
+      setBanner(rt, 'Scout 数据交给 Analyst，开始速览分析...');
+      setPathState(rt, 'path-s-a', 'flowing');
+      setNodeState(rt, 'a', '速览分析...', 'active');
+      const el = startStage(rt, 1);
+      await runWorkCard(rt, st.cards[0].title, st.cards[0].logs, st.cards[0].ms, el);
+      if (!alive(rt)) return;
+      el.insertAdjacentHTML('beforeend', st.result);
+      scrollDoc(rt);
+      setPathState(rt, 'path-s-a', 'idle');
+      setNodeState(rt, 'a', '分析完成', 'idle');
+      return;
+    }
+    // i === 2
+    setStatus('核验与报告…', 'busy');
+    setBanner(rt, 'Analyst 结论交由 Critic 快速核验...');
+    setPathState(rt, 'path-a-c', 'flowing');
+    setNodeState(rt, 'c', '快速核验...', 'active');
+    const el = startStage(rt, 2);
+    await runWorkCard(rt, st.cards[0].title, st.cards[0].logs, st.cards[0].ms, el);
+    if (!alive(rt)) return;
+    setBanner(rt, '核验通过，Master 正在整合报告...');
+    setPathState(rt, 'path-a-c', 'idle');
+    setPathState(rt, 'path-c-m', 'flowing');
+    setNodeState(rt, 'c', '核验通过', 'idle');
+    setNodeState(rt, 'm', '排版中...', 'active');
+    await runWorkCard(rt, st.cards[1].title, st.cards[1].logs, st.cards[1].ms, el);
+    if (!alive(rt)) return;
+    el.insertAdjacentHTML('beforeend', st.result);
+    scrollDoc(rt);
+    setPathState(rt, 'path-c-m', 'idle');
+    await sleep(rt, 800);
+    return;
+  }
+
   if (i === 0) {
     setBanner(rt, '系统初始化，Master 正在拆解调研任务...');
     setNodeState(rt, 'm', '正在拆解任务...', 'active');
@@ -1122,23 +1292,25 @@ async function runStage(rt: CardRuntime, i: number): Promise<void> {
 
 async function runDag(rt: CardRuntime): Promise<void> {
   drawLines(rt);
-  for (let i = 0; i < 5; i++) setStepperState(rt, i, 'idle');
+  const n = rt.stages.length;
+  for (let i = 0; i < n; i++) setStepperState(rt, i, 'idle');
 
-  // 恢复此前已完成的阶段（切换会话后回来续跑）
-  const from = rt.resumeStage;
+  // 恢复此前已完成的阶段（切换会话后回来续跑）；旧数据按新阶段数裁剪
+  const from = Math.min(rt.resumeStage, n);
   for (let k = 0; k < from; k++) {
     restoreStage(rt, k);
     setStepperState(rt, k, 'completed');
   }
+  if (from > 0) markNodesDone(rt);
 
   // 上次停在审批点：直接恢复审批面板，不重跑已完成阶段
-  if (from >= 1 && from <= 3 && rt.stages[from - 1].hitl && !rt.resumeHitlDone) {
+  if (from >= 1 && from < n && rt.stages[from - 1].hitl && !rt.resumeHitlDone) {
     await enterHitl(rt, from - 1);
     if (!alive(rt)) return;
     saveStageProgress(rt, from, true);
   }
 
-  for (let i = from; i < 5; i++) {
+  for (let i = from; i < n; i++) {
     await runStage(rt, i);
     if (!alive(rt)) return;
 
@@ -1159,7 +1331,7 @@ function finishCard(rt: CardRuntime): void {
   rt.finished = true;
   rt.waiting = false;
   saveStageProgress(rt, 5, true);
-  setStepperState(rt, 4, 'completed');
+  setStepperState(rt, rt.stages.length - 1, 'completed');
   setBanner(rt, '', false);
   setNodeState(rt, 'm', '生成完毕', 'idle');
   closePanel(rt);
@@ -1262,6 +1434,14 @@ function mountCard(report: Report, depth: ReportDepth, finished: boolean, metaTi
   return rt;
 }
 
+/** 回放 / 续跑恢复时，把四个 Agent 节点标为已完成态（避免显示「待命」） */
+function markNodesDone(rt: CardRuntime): void {
+  setNodeState(rt, 's', '检索完成', 'idle');
+  setNodeState(rt, 'a', '分析完成', 'idle');
+  setNodeState(rt, 'c', rt.depth === 'simple' ? '核验通过' : '审查完毕', 'idle');
+  setNodeState(rt, 'm', '生成完毕', 'idle');
+}
+
 /** 回放：直接渲染为全部完成态（拓扑 + 五阶段结果） */
 function renderDone(rt: CardRuntime, metaTime?: string): void {
   drawLines(rt);
@@ -1271,8 +1451,8 @@ function renderDone(rt: CardRuntime, metaTime?: string): void {
   doc.innerHTML = h1 + rt.stages.map((st, i) =>
     `<div class="doc-content" data-stage="${i}"><div class="doc-h2">${esc(st.title)}</div>${st.result}</div>`,
   ).join('');
-  for (let i = 0; i < 5; i++) setStepperState(rt, i, 'completed');
-  setNodeState(rt, 'm', '生成完毕', 'idle');
+  for (let i = 0; i < rt.stages.length; i++) setStepperState(rt, i, 'completed');
+  markNodesDone(rt);
   rt.index = rt.stages.length;
   rt.finished = true;
   rt.waiting = false;

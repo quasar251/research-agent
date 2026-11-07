@@ -23,6 +23,7 @@ import {
   sendMessage,
   bindChatEvents,
 } from './dialog';
+import { openConsole, isConsoleOpen, closeConsole } from './console';
 
 const app = document.querySelector<HTMLDivElement>('#app')!;
 const allReportIds = ['ai-agent', 'humanoid', 'perovskite'];
@@ -147,6 +148,8 @@ function shell(): string {
             <div class="task-list" id="taskList"></div>
           </div>
         </div>
+
+        <button class="console-nav" id="consoleBtn" title="查看调研行为与成本"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"></circle><path d="M4 21c0-4 3.6-6.5 8-6.5s8 2.5 8 6.5"></path></svg> 用户控制台</button>
 
         <div class="sidebar-foot">
           <span class="dot"></span><span class="foot-text">Agent 在线</span>
@@ -363,7 +366,12 @@ function bind(): void {
     applySidebar(sidebarPinned);
   });
 
-  document.getElementById('newBtn')!.addEventListener('click', () => showWelcome(suggestions));
+  document.getElementById('newBtn')!.addEventListener('click', () => {
+    if (isConsoleOpen()) closeConsole();
+    showWelcome(suggestions);
+  });
+
+  document.getElementById('consoleBtn')!.addEventListener('click', openConsole);
 
   document.getElementById('convList')!.addEventListener('click', (e) => {
     const target = e.target as HTMLElement;
@@ -375,7 +383,11 @@ function bind(): void {
     const item = target.closest<HTMLElement>('.hi-body');
     if (!item) return;
     const conv = conversations.find((c) => c.id === item.dataset.conv);
-    if (conv) replayConversation(conv);
+    if (conv) {
+      /* 控制台页内点击历史会话：先退回对话页再回放 */
+      if (isConsoleOpen()) closeConsole();
+      replayConversation(conv);
+    }
   });
 
   document.getElementById('clearConvs')!.addEventListener('click', () => {
