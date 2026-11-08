@@ -5,6 +5,7 @@ import {
   type Section,
   type EvidenceStrength,
 } from './mock';
+import type { BackendReport } from './api';
 import { esc } from './common';
 
 /* ================================================================
@@ -221,6 +222,60 @@ export function fullReportHtml(r: Report, depth: ReportDepth): string {
             <span class="cite-title">${esc(c.title)}</span>
             <span class="cite-src">${esc(c.source)} · ${esc(c.date)}</span>
             ${strengthChip(c.strength)}
+          </li>`,
+            )
+            .join('')}
+        </ol>
+      </div>
+    </div>`;
+}
+
+/* ================================================================
+ * 后端结构化报告渲染（替换 Mock 数据，对接 api.ts 的 BackendReport）
+ * ----------------------------------------------------------------
+ * 后端 ReportModel 只含 topic / summary / takeaways / citations，
+ * 不含 sections（图表 / SWOT / 风险），故只渲染这些真实字段。
+ * ================================================================ */
+export function backendReportHtml(r: BackendReport, depth: ReportDepth): string {
+  const depthLabel = depth === 'deep' ? '深度' : '简版';
+  return `
+    <div class="report">
+      <div class="report-head">
+        <div class="report-kicker">deep research · ${depthLabel}报告</div>
+        <h2 class="report-title">${esc(r.topic)}深度洞察</h2>
+        <div class="report-summary">${esc(r.summary)}</div>
+      </div>
+
+      <div class="takeaways">
+        <div class="takeaways-title">核心结论 KEY TAKEAWAYS</div>
+        <ol>
+          ${r.takeaways
+            .map(
+              (t) =>
+                `<li>${esc(t.text)}${strengthChip(t.strength as EvidenceStrength)}${
+                  t.refs.length ? `<span class="trefs">[${t.refs.map((i) => i + 1).join(',')}]</span>` : ''
+                }</li>`,
+            )
+            .join('')}
+        </ol>
+      </div>
+
+      ${r.sections.map((s, i) => sectionHtml(s as unknown as Section, i)).join('')}
+
+      <div class="section">
+        <div class="sec-head">
+          <span class="sec-index">REF</span>
+          <span class="sec-title">信息来源 References</span>
+        </div>
+        <ol class="cite-list">
+          ${r.citations
+            .map(
+              (c, i) => `
+          <li class="cite-item">
+            <span class="cite-no">[${i + 1}]</span>
+            <span class="cite-title">${esc(c.title)}</span>
+            <span class="cite-src">${esc(c.source)}</span>
+            ${c.strength ? strengthChip(c.strength as EvidenceStrength) : ''}
           </li>`,
             )
             .join('')}

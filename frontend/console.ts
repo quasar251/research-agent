@@ -1,4 +1,4 @@
-import { reports, suggestions } from './mock';
+import { suggestions } from './mock';
 import { esc } from './common';
 import { conversations, todaySpend } from './store';
 import { isResearchRunning, restoreFollowDock, showWelcome } from './dialog';
@@ -34,7 +34,7 @@ function convStage(c: (typeof conversations)[number]): number {
 
 function collectStats(): ConvStat[] {
   return conversations.map((c) => ({
-    topic: c.title || reports[c.reportId]?.topic || c.reportId,
+    topic: c.title || c.reportId,
     domain: c.domain,
     depth: c.depth,
     time: c.time,

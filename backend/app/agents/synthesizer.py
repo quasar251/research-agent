@@ -15,17 +15,74 @@ from ..skill.registry import SkillRegistry
 from ..state.graph import AgentState
 from ..state.schema import (
     AgentRole,
+    ReportBarItem,
     ReportCitation,
     ReportModel,
+    ReportRisk,
+    ReportSection,
+    ReportSeriesPoint,
+    ReportSwot,
     ReportTakeaway,
     StageName,
 )
 
 _BUDGET = 4000  # 合成阶段的上下文 token 预算（context.md §5）
 
+_SECTION_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "heading": {"type": "string"},
+        "kind": {"type": "string", "enum": ["prose", "bullets", "chart", "bars", "swot", "risk"]},
+        "paragraphs": {"type": "array", "items": {"type": "string"}},
+        "bullets": {"type": "array", "items": {"type": "string"}},
+        "series": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {"year": {"type": "string"}, "value": {"type": "number"}},
+                "required": ["year", "value"],
+            },
+        },
+        "unit": {"type": "string"},
+        "bars": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {"name": {"type": "string"}, "pct": {"type": "number"}},
+                "required": ["name", "pct"],
+            },
+        },
+        "swot": {
+            "type": "object",
+            "properties": {
+                "strengths": {"type": "array", "items": {"type": "string"}},
+                "weaknesses": {"type": "array", "items": {"type": "string"}},
+                "opportunities": {"type": "array", "items": {"type": "string"}},
+                "threats": {"type": "array", "items": {"type": "string"}},
+            },
+        },
+        "risks": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string"},
+                    "likelihood": {"type": "integer", "minimum": 1, "maximum": 5},
+                    "impact": {"type": "integer", "minimum": 1, "maximum": 5},
+                },
+                "required": ["name", "likelihood", "impact"],
+            },
+        },
+    },
+    "required": ["heading", "kind"],
+}
+
 _SYNTHESIZE_SCHEMA = {
     "type": "object",
-    "properties": {"summary": {"type": "string"}},
+    "properties": {
+        "summary": {"type": "string"},
+        "sections": {"type": "array", "items": _SECTION_SCHEMA},
+    },
     "required": ["summary"],
 }
 
@@ -37,11 +94,36 @@ _STRENGTH_ZH = {
     "divided": "分歧",
 }
 
-_SYNTHESIZER_BASE = """你是一名行业调研的「合成员」，负责把所有已核查的结论聚合为一份结构化报告的摘要。
+_SYNTHESIZER_BASE = """你是一名行业调研的「合成员」，负责把所有已核查的结论聚合为一份结构化报告。
 
 # 职责边界
-你只管「结论矛不矛盾」：聚合去重结论、提炼摘要。
+你只管「结论矛不矛盾」：聚合去重结论、提炼摘要、组织章节。
 你不重复做证据分级（核查员已完成），也不引入任何新的事实或数据。"""
+
+
+def _parse_sections(raw_sections: list) -> list[ReportSection]:
+    """把 LLM 产出的 sections 转成 ReportSection 列表（单个 section 解析失败则跳过）。"""
+    sections: list[ReportSection] = []
+    for s in raw_sections or []:
+        if not isinstance(s, dict):
+            continue
+        try:
+            sections.append(
+                ReportSection(
+                    heading=s.get("heading", ""),
+                    kind=s.get("kind", "prose"),
+                    paragraphs=s.get("paragraphs", []) or [],
+                    bullets=s.get("bullets", []) or [],
+                    series=[ReportSeriesPoint(**p) for p in (s.get("series") or [])],
+                    unit=s.get("unit", ""),
+                    bars=[ReportBarItem(**b) for b in (s.get("bars") or [])],
+                    swot=ReportSwot(**s["swot"]) if s.get("swot") else None,
+                    risks=[ReportRisk(**r) for r in (s.get("risks") or [])],
+                )
+            )
+        except Exception:  # noqa: BLE001 - 容错跳过坏 section
+            continue
+    return sections
 
 
 def make_synthesizer_node(
@@ -72,7 +154,7 @@ def make_synthesizer_node(
                         "content": (
                             "以下是本次调研产出的结论（含证据强度）：\n\n"
                             f"{claims_text}\n\n"
-                            "请聚合去重后产出一段摘要。"
+                            "请聚合去重后产出一段摘要，并按「参考技能」里的图表画法组织报告章节（sections）。"
                         ),
                     },
                 ],
@@ -80,10 +162,12 @@ def make_synthesizer_node(
                 input_schema=_SYNTHESIZE_SCHEMA,
             )
             summary = result.get("summary", "")
+            sections = _parse_sections(result.get("sections", []))
             errors: list[str] = []
         except LLMError as exc:
             # 失败兜底：摘要降级为空，报告仍由台账（takeaways/citations）派生，不崩溃
             summary = ""
+            sections = []
             errors = [f"报告摘要生成失败：{exc}"]
 
         # 从状态组装结构化报告：summary 由 LLM 产出，其余由台账派生
@@ -103,6 +187,7 @@ def make_synthesizer_node(
             summary=summary,
             takeaways=takeaways,
             citations=citations,
+            sections=sections,
             coverage=state["matrix"].coverage,
         )
         return {

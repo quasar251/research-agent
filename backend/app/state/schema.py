@@ -210,6 +210,51 @@ class ReportCitation(BaseModel):
     strength: EvidenceStrength | None = None
 
 
+class ReportSeriesPoint(BaseModel):
+    """折线图数据点（对齐前端 SeriesPoint）。"""
+
+    year: str
+    value: float
+
+
+class ReportBarItem(BaseModel):
+    """条形图条目（对齐前端 BarItem）。"""
+
+    name: str
+    pct: float
+
+
+class ReportSwot(BaseModel):
+    """SWOT 四象限（对齐前端 SwotItem）。"""
+
+    strengths: list[str] = Field(default_factory=list)
+    weaknesses: list[str] = Field(default_factory=list)
+    opportunities: list[str] = Field(default_factory=list)
+    threats: list[str] = Field(default_factory=list)
+
+
+class ReportRisk(BaseModel):
+    """风险矩阵条目（对齐前端 RiskItem）。"""
+
+    name: str
+    likelihood: int = Field(ge=1, le=5)
+    impact: int = Field(ge=1, le=5)
+
+
+class ReportSection(BaseModel):
+    """报告章节（对齐前端 Section）。kind 决定用哪组字段渲染。"""
+
+    heading: str
+    kind: str  # prose / bullets / chart / bars / swot / risk
+    paragraphs: list[str] = Field(default_factory=list)  # prose
+    bullets: list[str] = Field(default_factory=list)     # bullets
+    series: list[ReportSeriesPoint] = Field(default_factory=list)  # chart
+    unit: str = ""                                       # chart 单位
+    bars: list[ReportBarItem] = Field(default_factory=list)  # bars
+    swot: ReportSwot | None = None                       # swot
+    risks: list[ReportRisk] = Field(default_factory=list)  # risk
+
+
 class ReportModel(BaseModel):
     """结构化报告（对齐前端 Report 接口）。"""
 
@@ -217,4 +262,5 @@ class ReportModel(BaseModel):
     summary: str
     takeaways: list[ReportTakeaway] = Field(default_factory=list)
     citations: list[ReportCitation] = Field(default_factory=list)
+    sections: list[ReportSection] = Field(default_factory=list)
     coverage: float = 0.0

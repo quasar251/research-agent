@@ -46,6 +46,33 @@ _REPORT_BODY = """## 摘要编写要求
 ## 报告章节结构（最终交付物骨架，deep 全量 / simple 收敛）
 执行摘要 → 行业定义与宏观环境 → 市场规模 → 产业链 → 竞争格局 → 趋势研判 → 风险提示 → SWOT → 结论与建议 → 信息来源。"""
 
+# 图表画法：每种图表「怎么产出结构化数据」的规范，供 Synthesizer 生成 sections。
+# 对齐前端 Section.kind：chart（折线）/ bars（条形）/ swot（四象限）/ risk（风险矩阵）。
+
+_CHART_BODY = """## 折线图（chart）—— 市场规模 / 出货量 / 趋势
+- 用途：呈现「历年规模、出货量、渗透率、产能」等时间序列。
+- series：恰好 5 个数据点 [{year, value}]；year 用年份字符串（如 "2024"），value 用数值。
+- unit：单位字符串（如 "亿美元"、"万台"、"GW"、"%"）。
+- 要求：历史值 + 预测值连贯，量级合理，不要用无法验证的精确数字（可用约数）。"""
+
+_BARS_BODY = """## 条形图（bars）—— 竞争格局 / 市场份额
+- 用途：呈现「头部厂商份额、市场集中度」。
+- bars：5~7 个条目 [{name, pct}]；name 用厂商/品类名，pct 用百分比数值（0~100，可 1 位小数）。
+- 末位放「其他」归总，使各条 pct 之和接近 100。
+- 只列有依据的厂商，不要编造份额数字。"""
+
+_SWOT_BODY = """## SWOT 四象限（swot）
+- 用途：呈现「优势 / 劣势 / 机会 / 威胁」。
+- strengths / weaknesses / opportunities / threats：各 2~3 条要点，落到可验证的事实，避免空话。
+- S（优势）/ W（劣势）面向内部能力；O（机会）/ T（威胁）面向外部环境。
+- 与「风险提示」区分：SWOT 是综合研判，风险矩阵是单项风险打分。"""
+
+_RISK_BODY = """## 风险矩阵（risk）
+- 用途：呈现「关键风险及其可能性 / 影响」。
+- risks：3~5 个条目 [{name, likelihood, impact}]。
+- likelihood（可能性）/ impact（影响）用 1~5 整数，5 表示最高。
+- name 用一句话点明具体风险，不要罗列空泛表述（如「市场风险」）。"""
+
 
 def build_default_registry() -> SkillRegistry:
     """构建预置的默认 Skill 注册表，按阶段绑定流程知识（含 description 概述）。"""
@@ -84,6 +111,43 @@ def build_default_registry() -> SkillRegistry:
             description="报告摘要规范与章节结构骨架（deep 全量/simple 收敛）",
             stage=StageName.SYNTHESIZE,
             body=_REPORT_BODY,
+        )
+    )
+    # 图表画法：每种图怎么产出结构化数据（Synthesizer 生成 sections 用）
+    registry.register(
+        Skill(
+            id="report-chart",
+            name="折线图",
+            description="市场规模/趋势折线图的数据结构（series + unit）",
+            stage=StageName.SYNTHESIZE,
+            body=_CHART_BODY,
+        )
+    )
+    registry.register(
+        Skill(
+            id="report-bars",
+            name="条形图",
+            description="竞争格局/份额条形图的数据结构（name + pct）",
+            stage=StageName.SYNTHESIZE,
+            body=_BARS_BODY,
+        )
+    )
+    registry.register(
+        Skill(
+            id="report-swot",
+            name="SWOT 四象限",
+            description="优势/劣势/机会/威胁四象限的数据结构",
+            stage=StageName.SYNTHESIZE,
+            body=_SWOT_BODY,
+        )
+    )
+    registry.register(
+        Skill(
+            id="report-risk",
+            name="风险矩阵",
+            description="风险可能性/影响打分矩阵的数据结构（likelihood + impact）",
+            stage=StageName.SYNTHESIZE,
+            body=_RISK_BODY,
         )
     )
     return registry

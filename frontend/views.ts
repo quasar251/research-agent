@@ -211,3 +211,22 @@ export function userMsgHtml(
   const actions = role === 'follow-user' ? msgActionsHtml(true) : '';
   return `<div class="msg user" data-role="${role}"${attrs}><div class="user-bubble">${esc(text)}</div>${actions}</div>`;
 }
+
+/** 真实调研卡片骨架：走后端 API，进度由 SSE 驱动，报告由 backendReportHtml 渲染 */
+export function realCardHtml(id: string, query: string, depth: ReportDepth): string {
+  return `
+    <div class="research-card" data-real-card="${id}" data-depth="${depth}">
+      <header class="research-header">
+        <div class="header-left">
+          <div class="header-tag">REAL RESEARCH · 后端调研</div>
+          <div class="header-title">正在${depth === 'deep' ? '深度' : ''}调研：<span>${esc(query)}</span></div>
+        </div>
+      </header>
+      <div class="main-card">
+        <div class="main-content">
+          <div class="collab-status-banner"><div class="dag-dot"></div><span class="banner-text real-status">准备启动...</span></div>
+          <div class="document-area"><div class="real-report"></div></div>
+        </div>
+      </div>
+    </div>`;
+}

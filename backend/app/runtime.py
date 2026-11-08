@@ -55,16 +55,18 @@ class ResearchRuntime:
         intent: str,
         depth: str = "simple",
         thread_id: str | None = None,
+        on_node: "callable | None" = None,
     ) -> dict:
         """执行一次调研，返回最终状态；全程埋点审计 + 收尾蒸馏长期记忆。
 
         deep 模式在 HITL 审批点暂停时返回含 `__interrupt__` 的状态（不收尾）。
+        on_node 在阶段推进时回调（SSE 流式推送用）。
         """
         state = initial_state(run_id, user_id, intent, depth)
         config = {"configurable": {"thread_id": thread_id or run_id}}
 
         self.audit_log.record("任务开始", run_id, {"intent": intent, "depth": depth})
-        final = self._stream(state, config, run_id)
+        final = self._stream(state, config, run_id, on_node)
         if final.get("__interrupt__"):
             self.audit_log.record("等待审批", run_id, {"checkpoint": "align"})
             return final
@@ -75,10 +77,11 @@ class ResearchRuntime:
         run_id: str,
         decision: str,
         thread_id: str | None = None,
+        on_node: "callable | None" = None,
     ) -> dict:
         """HITL 恢复：confirm 继续执行，retry 打回重新规划（api.md §3.4）。"""
         config = {"configurable": {"thread_id": thread_id or run_id}}
-        final = self._stream(Command(resume=decision), config, run_id)
+        final = self._stream(Command(resume=decision), config, run_id, on_node)
         if final.get("__interrupt__"):
             self.audit_log.record("等待审批", run_id, {"checkpoint": "align"})
             return final
@@ -88,7 +91,7 @@ class ResearchRuntime:
     # 内部：跑图 + 收尾
     # ------------------------------------------------------------------
 
-    def _stream(self, input_, config: dict, run_id: str) -> dict:
+    def _stream(self, input_, config: dict, run_id: str, on_node=None) -> dict:
         """跑图并埋点阶段推进，返回最终状态（可能含 __interrupt__）。"""
         final: dict = input_ if isinstance(input_, dict) else {}
         prev_stage = None
@@ -98,6 +101,8 @@ class ResearchRuntime:
             if stage is not None and stage != prev_stage:
                 self.audit_log.record("阶段推进", stage.value, {"run_id": run_id})
                 prev_stage = stage
+                if on_node is not None:
+                    on_node(stage.value)
         return final
 
     def _finish(self, final: dict, run_id: str) -> dict:
