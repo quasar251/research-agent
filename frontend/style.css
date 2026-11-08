@@ -3932,3 +3932,57 @@ button {
   color: var(--ink-dim);
   min-height: 16px;
 }
+
+/* ---------------- 真实调研卡片：进度条 + DAG 状态 ---------------- */
+/* 四阶段统一纵向串联，覆盖旧引擎按深度区分的菱形布局 */
+.research-card[data-real-card] .workflow-container.linear .wf-node { width: 170px; }
+.research-card[data-real-card] .workflow-container.linear .wf-node[data-agent='m'] { top: 3%; left: 50%; }
+.research-card[data-real-card] .workflow-container.linear .wf-node[data-agent='s'] { top: 28%; left: 50%; }
+.research-card[data-real-card] .workflow-container.linear .wf-node[data-agent='a'] { top: 53%; left: 50%; }
+.research-card[data-real-card] .workflow-container.linear .wf-node[data-agent='c'] { top: 78%; left: 50%; }
+
+.research-card[data-real-card] .wf-node.completed {
+  border-color: var(--dag-success);
+}
+.research-card[data-real-card] .wf-node.completed .wf-status {
+  color: var(--dag-success);
+  font-weight: 600;
+}
+.research-card[data-real-card] .wf-node.completed .wf-icon {
+  opacity: 0.85;
+}
+.research-card[data-real-card] .path-line.completed {
+  stroke: var(--dag-success);
+}
+.research-card[data-real-card] .wf-node.waiting .wf-status {
+  color: var(--dag-warning);
+}
+
+/* 追问框：默认 hidden，报告就绪后淡入出现 */
+.follow-area.reveal {
+  animation: follow-reveal 0.45s cubic-bezier(0.16, 1, 0.3, 1);
+}
+@keyframes follow-reveal {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* 报告完成后状态条停止脉冲 */
+.research-card[data-real-card] .collab-status-banner.is-done .dag-dot {
+  background: var(--dag-success);
+  animation: none;
+}
+
+/* card-body 固定高度：报告区内部滚动，审批/追问面板固定在底部可见 */
+.research-card[data-real-card] .main-card .document-area {
+  flex: 1;
+  min-height: 0;
+}
+.research-card[data-real-card] .approval-area,
+.research-card[data-real-card] .follow-area {
+  flex-shrink: 0;
+  margin-left: 0;
+  margin-right: 0;
+  padding-left: 34px;
+  padding-right: 34px;
+}

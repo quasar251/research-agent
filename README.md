@@ -113,30 +113,30 @@ npm run dev
 
 ### 后端（真实多 Agent 实现）
 
-需 Python 3.11+ 与 Anthropic API Key：
+Python 3.11+，推荐用 `uv`（自动按 `pyproject.toml` 准备依赖）：
 
 ```bash
-pip install -e ".[dev]"
-export ANTHROPIC_API_KEY="sk-ant-..."
+uv run python backend/serve.py
 ```
 
-后端采用 `create_app(llm)` 工厂注入 LLM，用一个简短脚本启动：
+启动后监听 `http://127.0.0.1:8000`，交互式文档在 `/docs`，`CTRL+C` 停止。已内置 CORS 白名单，前端 Vite（`localhost:5173`）可直接跨域调用。
 
-```python
-# serve.py
-import os, uvicorn
-from backend.app.llm.client import AnthropicClient
-from backend.app.main import create_app
+**两种模式自动切换**（`serve.py` 读 `.env`）：
 
-llm = AnthropicClient(api_key=os.getenv("ANTHROPIC_API_KEY", ""))
-uvicorn.run(create_app(llm), host="127.0.0.1", port=8000)
-```
+| 条件 | 模式 | 说明 |
+| --- | --- | --- |
+| 有 `.env` 且含 `API_KEY` | 真实 LLM | `AnthropicClient`，端点/模型由 `BASE_URL` / `MODEL_ID` 指定 |
+| 无 `.env` 或无 `API_KEY` | 离线 Mock | `OfflineMockLLM`，零网络、零密钥，适合前端联调 |
+
+`.env` 配置项：`API_KEY`、`BASE_URL`、`MODEL_ID`、`EMBEDDING_*`、`RERANKER_*`、`DB_PATH`（密钥只从环境变量读取，不进仓库）。
+
+联调自检（用真实配置分步验证 LLM 结构化输出、Embedding、完整调研链路）：
 
 ```bash
-python serve.py
+python backend/live_check.py
 ```
 
-详细的配置、部署、监控见 [`docs/operations.md`](docs/operations.md)。
+接口清单与对接路线见 [`docs/api-integration.md`](docs/api-integration.md)，配置与部署见 [`docs/operations.md`](docs/operations.md)。
 
 ---
 
@@ -144,9 +144,11 @@ python serve.py
 
 ```
 research-agent/
-├── frontend/              # Vite + TypeScript Mock 演示前端
+├── frontend/              # Vite + TypeScript Mock 演示前端（含 index.html 入口）
 │
 ├── backend/               # Python FastAPI + LangGraph 后端
+│   ├── serve.py           # 启动入口（真实 LLM / 离线 Mock 自动切换）
+│   ├── live_check.py      # 联调自检脚本
 │   └── app/
 │       ├── agents/        # 多 Agent（Lead / Collector / Verifier / Synthesizer）
 │       ├── orchestration/ # 调度（阶段感知 + 依赖感知）
@@ -180,21 +182,36 @@ research-agent/
 | [`docs/observability.md`](docs/observability.md) | 可观测性 |
 | [`docs/eval.md`](docs/eval.md) | 质量评估方案 |
 | [`docs/operations.md`](docs/operations.md) | 部署与运维 |
+| [`docs/api-integration.md`](docs/api-integration.md) | 前后端接口对接蓝图（端点清单 / 对照 / 路线） |
 
 ---
 
 ## 🧪 测试
 
 ```bash
-# 后端
-pip install -e ".[dev]"
-pytest
+# 全量（uv 自动准备依赖）
+uv run pytest test -q
+
+# 只跑离线端到端测试
+uv run pytest test/test_offline_e2e.py -q
 ```
 
 后端 LLM 层通过 `LLMClient` 协议抽象，测试时注入 Mock，**无需真实 API Key**。
 
-uv run python backend/serve.py
-npm run dev
+离线 E2E（`test/test_offline_e2e.py`）覆盖简单调研全流程、深度调研 HITL 审批（confirm / retry）、SSE 阶段事件、模拟等待时间与中间态轮询、追问、幂等与参数校验。共享离线 Mock 在 `backend/app/llm/mock.py`：
+
+- 设置 `MOCK_DELAY_MS=200` 可让每次 LLM 调用前等待 200ms，本地联调时能真实看到阶段推进动画，例如 `MOCK_DELAY_MS=200 uv run python backend/serve.py`。
+- 不设则延迟为 0，测试与演示都瞬时完成。
+
+### 前后端同时启动
+
+两个终端分别运行：
+
+```bash
+uv run python backend/serve.py   # 终端 A：后端 8000
+npm run dev                       # 终端 B：前端 5173
+```
+
 ---
 
 <div align="center">

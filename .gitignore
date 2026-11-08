@@ -21,7 +21,13 @@ __pycache__/
 
 # 运行时产物（SQLite 检查点/任务库 + JSONL 审计）
 *.sqlite
+*.sqlite-shm
+*.sqlite-wal
 *.audit.jsonl
+
+# 本地测试 / 诊断脚本
+_check_*.py
+_shot_*.png
 
 # 环境变量
 .env

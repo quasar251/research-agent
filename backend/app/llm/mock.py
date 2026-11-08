@@ -2,18 +2,37 @@
 
 产出确定性的研究计划、结论、分级与摘要，让前端能真实跑通四阶段数据流，
 而非「LLM 假装回答」。与测试里的 MockLLM 等价，但作为共享的离线入口。
+
+支持「模拟等待时间」：设置 delay_s（或环境变量 MOCK_DELAY_MS）让每次
+LLM 调用前 sleep，使各阶段/SSE 事件按真实节奏推进，便于验证中间态与轮询等待。
+用法：MOCK_DELAY_MS=200 uv run python backend/serve.py
 """
 from __future__ import annotations
 
+import os
+import time
 from typing import Any
 
 from .client import ChatMessage
 
 
 class OfflineMockLLM:
-    """离线确定性 LLM：四阶段各返回固定结构，无网络、无 key。"""
+    """离线确定性 LLM：四阶段各返回固定结构，无网络、无 key。
+
+    Args:
+        delay_s: 每次 LLM 调用前的模拟耗时（秒）。None 时读环境变量
+            MOCK_DELAY_MS（毫秒），默认 0（不等待）。
+    """
 
     model = "offline-mock"
+
+    def __init__(self, delay_s: float | None = None) -> None:
+        if delay_s is None:
+            delay_s = float(os.environ.get("MOCK_DELAY_MS", "0")) / 1000.0
+        self.delay_s = max(0.0, delay_s)
+        # 调用时间轴：[(tool_name, 距实例创建的秒数)]，供测试断言阶段顺序与耗时
+        self.calls: list[tuple[str, float]] = []
+        self._t0 = time.monotonic()
 
     def complete(self, messages: list[ChatMessage], max_tokens: int = 1024) -> str:
         return "{}"
@@ -25,6 +44,9 @@ class OfflineMockLLM:
         input_schema: dict[str, Any],
         max_tokens: int = 4096,
     ) -> dict[str, Any]:
+        if self.delay_s:
+            time.sleep(self.delay_s)
+        self.calls.append((tool_name, round(time.monotonic() - self._t0, 4)))
         if tool_name == "submit_plan":
             return {
                 "companies": ["OpenAI", "Anthropic", "Google DeepMind"],

@@ -212,6 +212,47 @@ export function userMsgHtml(
   return `<div class="msg user" data-role="${role}"${attrs}><div class="user-bubble">${esc(text)}</div>${actions}</div>`;
 }
 
+/** 后端四阶段（与 SSE 推的 node 一一对应） */
+export const REAL_STAGES = [
+  { key: 'align', step: '任务拆解', agent: 'm', name: '规划者', working: '拆解研究范围...' },
+  { key: 'collect', step: '数据检索', agent: 's', name: '搜集员', working: '检索并抽取结论...' },
+  { key: 'verify', step: '交叉审查', agent: 'a', name: '核查员', working: '证据强度分级...' },
+  { key: 'synthesize', step: '生成报告', agent: 'c', name: '合成员', working: '聚合去重成稿...' },
+] as const;
+
+/** 顶部进度条：结构与后端四阶段一致，状态由 dialog.ts 按 SSE 事件驱动 */
+function realStepperHtml(): string {
+  return `<div class="stepper-container">${REAL_STAGES.map(
+    (s, i) => `
+      <div class="stepper-item" data-step="${i}"><div class="stepper-dot">${i + 1}</div><div class="stepper-label">${s.step}</div></div>
+      ${i < REAL_STAGES.length - 1 ? `<div class="stepper-line" data-line="${i}"></div>` : ''}`,
+  ).join('')}</div>`;
+}
+
+/** 左侧 DAG 拓扑：四角色纵向串联，连线随阶段推进点亮 */
+function realDagHtml(): string {
+  const nodes = REAL_STAGES.map(
+    (s) => `<div class="wf-node" data-agent="${s.agent}" data-stage="${s.key}">
+      <div class="wf-icon" style="background-color:var(--agent-${s.agent})">${s.agent.toUpperCase()}</div>
+      <div class="wf-info"><div class="wf-name">${s.name}</div><div class="wf-status" data-status="${s.agent}">待命</div></div>
+    </div>`,
+  ).join('');
+  const edges = [0, 1, 2]
+    .map(
+      (i) =>
+        `<path class="path-line" data-edge-index="${i}" vector-effect="non-scaling-stroke" d="M 50 ${13 + i * 25} L 50 ${28 + i * 25}"/>`,
+    )
+    .join('');
+  return `
+    <div class="dag-sidebar">
+      <div class="sidebar-title">Agent 协同工作流 · 四阶段</div>
+      <div class="workflow-container linear">
+        <svg class="workflow-svg" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">${edges}</svg>
+        ${nodes}
+      </div>
+    </div>`;
+}
+
 /** 真实调研卡片骨架：走后端 API，进度由 SSE 驱动，报告由 backendReportHtml 渲染 */
 export function realCardHtml(id: string, query: string, depth: ReportDepth): string {
   return `
@@ -223,8 +264,11 @@ export function realCardHtml(id: string, query: string, depth: ReportDepth): str
         </div>
       </header>
       <div class="main-card">
+        ${realStepperHtml()}
+        <div class="card-body">
+        ${realDagHtml()}
         <div class="main-content">
-          <div class="collab-status-banner"><div class="dag-dot"></div><span class="banner-text real-status">准备启动...</span></div>
+          <div class="collab-status-banner show"><div class="dag-dot"></div><span class="banner-text real-status">准备启动...</span></div>
           <div class="document-area"><div class="real-report"></div></div>
           <div class="approval-area hidden">
             <div class="approval-head">
@@ -248,6 +292,7 @@ export function realCardHtml(id: string, query: string, depth: ReportDepth): str
             </div>
             <div class="follow-answer"></div>
           </div>
+        </div>
         </div>
       </div>
     </div>`;

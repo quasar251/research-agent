@@ -16,7 +16,7 @@ import {
   setConvReport,
   type Conversation,
 } from './store';
-import { welcomeHtml, wordWallHtml, realCardHtml } from './views';
+import { welcomeHtml, wordWallHtml, realCardHtml, REAL_STAGES } from './views';
 
 /* ================================================================
  * 对话区模块（数据来自后端 API，前端只做渲染）
@@ -104,6 +104,58 @@ const STAGE_LABEL: Record<string, string> = {
   synthesize: '生成报告中...',
 };
 
+type PipelineMode = 'running' | 'done' | 'waiting' | 'failed';
+
+/** 按 SSE 阶段推进进度条 + DAG 节点 + 连线状态（真实流程可视化，非动画回放） */
+function updatePipeline(card: HTMLElement, activeIdx: number, mode: PipelineMode): void {
+  const done = mode === 'done';
+  const idx = done ? REAL_STAGES.length : Math.max(0, activeIdx);
+
+  card.querySelectorAll<HTMLElement>('.stepper-item').forEach((el, i) => {
+    el.classList.remove('active', 'completed', 'waiting');
+    if (done || i < idx) el.classList.add('completed');
+    else if (mode === 'waiting' && i === 0) el.classList.add('waiting');
+    else if (mode === 'running' && i === idx) el.classList.add('active');
+  });
+  card.querySelectorAll<HTMLElement>('.stepper-line').forEach((el, i) => {
+    el.classList.remove('completed', 'active-line');
+    if (done || i < idx) el.classList.add('completed');
+    else if (mode === 'running' && i === idx - 1) el.classList.add('active-line');
+  });
+  card.querySelectorAll<HTMLElement>('.wf-node').forEach((el, i) => {
+    el.classList.remove('active', 'completed', 'waiting');
+    const label = el.querySelector<HTMLElement>('.wf-status');
+    if (done || i < idx) {
+      el.classList.add('completed');
+      if (label) label.textContent = '已完成';
+    } else if (mode === 'waiting' && i === 0) {
+      el.classList.add('waiting');
+      if (label) label.textContent = '等待人工确认';
+    } else if (mode === 'running' && i === idx) {
+      el.classList.add('active');
+      if (label) label.textContent = REAL_STAGES[i]?.working ?? '进行中...';
+    } else if (label) {
+      label.textContent = '待命';
+    }
+  });
+  card.querySelectorAll<HTMLElement>('.path-line').forEach((el, i) => {
+    el.classList.remove('active', 'flowing', 'completed');
+    if (done || i < idx) el.classList.add('active');
+    if (mode === 'running' && i === idx - 1) el.classList.add('active', 'flowing');
+  });
+  const banner = card.querySelector<HTMLElement>('.collab-status-banner');
+  banner?.classList.add('show');
+  banner?.classList.toggle('is-done', done);
+}
+
+/** 追问框只在报告就绪后出现；其余状态一律隐藏 */
+function setFollowVisible(card: HTMLElement, visible: boolean): void {
+  const el = card.querySelector<HTMLElement>('.follow-area');
+  if (!el) return;
+  el.classList.toggle('hidden', !visible);
+  el.classList.toggle('reveal', visible);
+}
+
 /** 把后端任务状态渲染到真实调研卡片（completed / waiting_approval / failed 统一处理） */
 function renderResearchState(
   card: HTMLElement,
@@ -114,12 +166,12 @@ function renderResearchState(
   const reportEl = card.querySelector<HTMLElement>('.real-report');
   const statusEl = card.querySelector<HTMLElement>('.real-status');
   const approvalEl = card.querySelector<HTMLElement>('.approval-area');
-  const followEl = card.querySelector<HTMLElement>('.follow-area');
 
   if (st.status === 'waiting_approval') {
     if (statusEl) statusEl.textContent = '等待你确认研究计划...';
     approvalEl?.classList.remove('hidden');
-    followEl?.classList.add('hidden');
+    setFollowVisible(card, false);
+    updatePipeline(card, 0, 'waiting');
     setStatus('等待审批', 'busy');
     return;
   }
@@ -130,7 +182,8 @@ function renderResearchState(
     // 卡片进度文案与顶部状态同步，避免「已完成」却仍显示「生成报告中...」
     if (statusEl) statusEl.textContent = '报告已生成';
     approvalEl?.classList.add('hidden');
-    followEl?.classList.remove('hidden');
+    updatePipeline(card, REAL_STAGES.length, 'done');
+    setFollowVisible(card, true);
     setStatus('已完成', 'ok');
     return;
   }
@@ -138,6 +191,8 @@ function renderResearchState(
   if (statusEl) statusEl.textContent = '调研未完成';
   if (reportEl) reportEl.innerHTML = '<div class="doc-text">调研失败，请稍后重试。</div>';
   approvalEl?.classList.add('hidden');
+  setFollowVisible(card, false);
+  updatePipeline(card, 0, 'failed');
   setStatus('调研失败', 'idle');
 }
 
@@ -160,6 +215,7 @@ export function sendMessage(text: string): void {
 
   setDepthLocked(true);
   hideFollowDock();
+  setFollowVisible(card, false);
   setStatus('调研中…', 'busy');
   scrollToCard();
 
@@ -170,6 +226,8 @@ export function sendMessage(text: string): void {
     (node) => {
       const el = card.querySelector<HTMLElement>('.real-status');
       if (el) el.textContent = STAGE_LABEL[node] ?? node;
+      const idx = REAL_STAGES.findIndex((s) => s.key === node);
+      if (idx >= 0) updatePipeline(card, idx, 'running');
     },
     async () => {
       try {
@@ -248,6 +306,8 @@ export function bindChatEvents(): void {
       if (note) note.textContent = action === 'retry' ? '已打回，正在重新规划...' : '已确认，继续调研中...';
       const statusEl = card.querySelector<HTMLElement>('.real-status');
       if (statusEl) statusEl.textContent = action === 'retry' ? '按意见重新规划中...' : '继续调研中...';
+      // 打回：回到第一步重新规划；确认：从第二步继续推进
+      updatePipeline(card, action === 'retry' ? 0 : 1, 'running');
       setStatus('调研中…', 'busy');
 
       submitAction(runId, action, feedback)
