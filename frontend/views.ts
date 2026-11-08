@@ -226,6 +226,13 @@ export function realCardHtml(id: string, query: string, depth: ReportDepth): str
         <div class="main-content">
           <div class="collab-status-banner"><div class="dag-dot"></div><span class="banner-text real-status">准备启动...</span></div>
           <div class="document-area"><div class="real-report"></div></div>
+          <div class="follow-area hidden">
+            <div class="follow-row">
+              <input class="follow-input" type="text" placeholder="对这份报告还有什么想追问的？" />
+              <button class="follow-btn" type="button" data-follow-run="${id}">追问</button>
+            </div>
+            <div class="follow-answer"></div>
+          </div>
         </div>
       </div>
     </div>`;

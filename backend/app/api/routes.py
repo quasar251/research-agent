@@ -7,6 +7,7 @@ import uuid
 from fastapi import APIRouter, Header, HTTPException, Request
 from pydantic import BaseModel
 
+from ..llm.client import LLMError
 from .store import TaskStore
 
 router = APIRouter()
@@ -20,6 +21,10 @@ class ResearchRequest(BaseModel):
 class ActionRequest(BaseModel):
     action: str  # confirm / retry
     feedback: str = ""  # 可选：retry 时的补充说明
+
+
+class FollowRequest(BaseModel):
+    question: str  # 基于已产出报告提出的追问
 
 
 def _task_store(request: Request) -> TaskStore:
@@ -115,3 +120,28 @@ async def research_action(run_id: str, req: ActionRequest, request: Request):
     else:
         store.update(run_id, "completed", result)
     return {"run_id": run_id, "status": store.get(run_id)["status"]}
+
+
+@router.post("/research/{run_id}/follow")
+async def research_follow(run_id: str, req: FollowRequest, request: Request):
+    """基于已产出报告回答追问（复用调研结论，不重新检索）。
+
+    - 任务不存在 → 404；未完成 → 409 WRONG_STATE；question 空 → 400 INVALID_PARAM
+    """
+    store = _task_store(request)
+    task = store.get(run_id)
+    if task is None:
+        raise HTTPException(status_code=404, detail="RUN_NOT_FOUND")
+    if task["status"] != "completed":
+        raise HTTPException(status_code=409, detail="WRONG_STATE")
+
+    question = (req.question or "").strip()
+    if not question:
+        raise HTTPException(status_code=400, detail="INVALID_PARAM")
+
+    try:
+        result = await asyncio.to_thread(request.app.state.runtime.follow_up, run_id, question)
+    except LLMError:
+        # runtime 无缓存结果（如服务重启后），视为状态不可用
+        raise HTTPException(status_code=409, detail="WRONG_STATE")
+    return {"run_id": run_id, "answer": result["answer"]}

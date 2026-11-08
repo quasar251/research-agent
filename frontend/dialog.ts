@@ -1,6 +1,6 @@
 import { state, setDepthLocked, setDepthUI, setStatus } from './common';
 import { backendReportHtml } from './report';
-import { newRunId, subscribeEvents, getResearch } from './api';
+import { newRunId, subscribeEvents, getResearch, followResearch } from './api';
 import {
   refreshSidebar,
   setActiveConv,
@@ -133,6 +133,7 @@ export function sendMessage(text: string): void {
           setConvReport(conv.id, st.report);
           reportEl.innerHTML = backendReportHtml(st.report, depth);
           setStatus('已完成', 'ok');
+          card.querySelector<HTMLElement>('.follow-area')?.classList.remove('hidden');
         } else {
           setStatus('调研失败', 'idle');
           if (reportEl) reportEl.innerHTML = '<div class="doc-text">调研失败，请稍后重试。</div>';
@@ -165,6 +166,7 @@ export function replayConversation(conv: Conversation): void {
   if (conv.report) {
     reportEl.innerHTML = backendReportHtml(conv.report, conv.depth);
     setStatus('已完成', 'ok');
+    card.querySelector<HTMLElement>('.follow-area')?.classList.remove('hidden');
   } else {
     getResearch(conv.runId)
       .then((st) => {
@@ -172,6 +174,7 @@ export function replayConversation(conv: Conversation): void {
           setConvReport(conv.id, st.report);
           reportEl.innerHTML = backendReportHtml(st.report, conv.depth);
           setStatus('已完成', 'ok');
+          card.querySelector<HTMLElement>('.follow-area')?.classList.remove('hidden');
         } else {
           reportEl.innerHTML = '<div class="doc-text">报告不可用，请重新发起调研。</div>';
           setStatus('调研失败', 'idle');
@@ -197,6 +200,25 @@ export function bindChatEvents(): void {
     const chip = target.closest<HTMLElement>('.chip');
     if (chip) {
       sendMessage(chip.dataset.query ?? '');
+      return;
+    }
+    const followBtn = target.closest<HTMLElement>('.follow-btn');
+    if (followBtn) {
+      const runId = followBtn.dataset.followRun ?? '';
+      const card = followBtn.closest<HTMLElement>('.research-card');
+      const input = card?.querySelector<HTMLInputElement>('.follow-input');
+      const answer = card?.querySelector<HTMLElement>('.follow-answer');
+      const q = input?.value.trim();
+      if (!runId || !q || !answer) return;
+      answer.textContent = '思考中...';
+      followResearch(runId, q)
+        .then((r) => {
+          answer.textContent = r.answer;
+        })
+        .catch(() => {
+          answer.textContent = '追问失败，请稍后重试。';
+        });
+      if (input) input.value = '';
     }
   });
 }

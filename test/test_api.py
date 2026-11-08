@@ -41,6 +41,8 @@ class MockLLM:
             return {"strength": "solid"}
         if tool_name == "submit_report":
             return {"summary": "最终报告摘要"}
+        if tool_name == "submit_answer":
+            return {"answer": "基于结论的回答"}
         return {}
 
 
@@ -86,3 +88,51 @@ def test_stream_research():
     assert resp.status_code == 200
     assert "data:" in resp.text
     assert "[DONE]" in resp.text
+
+
+def test_new_research_flow_end_to_end():
+    """模拟前端「新建调研」完整链路：SSE 阶段事件 → 取报告 → 追问。"""
+    client = _client()
+    run_id = "flow1"
+
+    # 1. SSE 即开即跑，四个阶段事件依次推送 + [DONE]
+    resp = client.get(f"/research/{run_id}/events", params={"intent": "调研 AI 智能体", "depth": "simple"})
+    assert resp.status_code == 200
+    body = resp.text
+    for stage in ["align", "collect", "verify", "synthesize"]:
+        assert f'{{"node": "{stage}"}}' in body
+    assert "[DONE]" in body
+
+    # 2. onDone 后取报告
+    resp = client.get(f"/research/{run_id}")
+    data = resp.json()
+    assert data["status"] == "completed"
+    assert data["report"]["summary"]
+    assert data["metrics"]["coverage"] == 1.0
+
+    # 3. 追问
+    resp = client.post(f"/research/{run_id}/follow", json={"question": "市场规模如何？"})
+    assert resp.status_code == 200
+    assert resp.json()["answer"]
+
+
+def test_follow_research_returns_answer():
+    client = _client()
+    # SSE 即开即跑，跑完结果落 store + runtime 缓存
+    client.get("/research/rf1/events", params={"intent": "调研 AI 智能体"})
+    resp = client.post("/research/rf1/follow", json={"question": "市场规模如何？"})
+    assert resp.status_code == 200
+    assert resp.json()["answer"] == "基于结论的回答"
+
+
+def test_follow_research_not_found():
+    resp = _client().post("/research/nonexist/follow", json={"question": "x"})
+    assert resp.status_code == 404
+
+
+def test_follow_research_wrong_state():
+    app = create_app(MockLLM())
+    app.state.task_store.create("rpending", "调研")
+    client = TestClient(app)
+    resp = client.post("/research/rpending/follow", json={"question": "x"})
+    assert resp.status_code == 409

@@ -87,6 +87,17 @@ export async function getResearch(run_id: string): Promise<ResearchStatus> {
   return resp.json();
 }
 
+/** 基于已产出报告追问（复用调研结论，不重新检索） */
+export async function followResearch(run_id: string, question: string): Promise<{ answer: string }> {
+  const resp = await fetch(`${BASE}/research/${run_id}/follow`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ question }),
+  });
+  if (!resp.ok) throw new Error(`follow failed: ${resp.status}`);
+  return resp.json();
+}
+
 /** SSE 订阅调研进度；返回取消函数。onNode 收到阶段名，onDone 收到结束（成功或失败）。 */
 export function subscribeEvents(
   run_id: string,

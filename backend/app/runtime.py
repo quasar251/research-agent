@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from langgraph.types import Command
 
-from .llm.client import LLMClient
+from .llm.client import LLMClient, LLMError
 from .llm.router import ModelRouter
 from .memory.distill import distill
 from .memory.retrieval import MemoryIndex
@@ -17,6 +17,18 @@ from .skill.catalog import build_default_registry
 from .state.checkpoint import create_checkpointer
 from .state.graph import initial_state
 from .tools.search import SEARCH_PERMISSION, SearchProvider
+
+_FOLLOW_BASE = """你是行业调研助手，基于已有调研结论回答用户的追问。
+
+# 职责边界
+你只基于给定的调研结论回答，不引入任何结论之外的新事实或数据。
+若结论不足以回答，如实说明「现有结论不足以回答」，绝不编造。"""
+
+_FOLLOW_SCHEMA = {
+    "type": "object",
+    "properties": {"answer": {"type": "string"}},
+    "required": ["answer"],
+}
 
 
 class ResearchRuntime:
@@ -34,9 +46,12 @@ class ResearchRuntime:
         if checkpointer is None and db_path:
             checkpointer = create_checkpointer(db_path)
         # 真实搜索由调用方显式注入；None 时 collector 跳过检索（测试/离线场景不触发网络）
+        self.llm = llm
         self.search = search
         self.skill_registry = build_default_registry()
         self.router = ModelRouter(llm)
+        # 缓存最终状态，供追问（follow_up）复用
+        self._results: dict[str, dict] = {}
         # 权限门：默认授权网页搜索，横切所有工具调用（s04）
         self.gate = PermissionGate(granted_permissions={SEARCH_PERMISSION})
         self.graph = build_graph(
@@ -70,7 +85,9 @@ class ResearchRuntime:
         if final.get("__interrupt__"):
             self.audit_log.record("等待审批", run_id, {"checkpoint": "align"})
             return final
-        return self._finish(final, run_id)
+        final = self._finish(final, run_id)
+        self._results[run_id] = final
+        return final
 
     def resume(
         self,
@@ -85,7 +102,40 @@ class ResearchRuntime:
         if final.get("__interrupt__"):
             self.audit_log.record("等待审批", run_id, {"checkpoint": "align"})
             return final
-        return self._finish(final, run_id)
+        final = self._finish(final, run_id)
+        self._results[run_id] = final
+        return final
+
+    def follow_up(self, run_id: str, question: str) -> dict:
+        """基于已有调研结论回答追问（api.md 追问场景）。
+
+        无该 run_id 的结果时抛 LLMError（调用方转 404）。
+        """
+        final = self._results.get(run_id)
+        if final is None:
+            raise LLMError(f"任务 {run_id} 无结果可追问", retryable=False)
+        claims = final.get("claims", [])
+        claims_text = "\n".join(f"- {c.text}" for c in claims) or "（无结论）"
+        try:
+            result = self.llm.complete_structured(
+                [
+                    {"role": "system", "content": _FOLLOW_BASE},
+                    {
+                        "role": "user",
+                        "content": (
+                            f"调研结论：\n{claims_text}\n\n"
+                            f"用户追问：{question}\n\n"
+                            "请基于以上结论回答。"
+                        ),
+                    },
+                ],
+                tool_name="submit_answer",
+                input_schema=_FOLLOW_SCHEMA,
+            )
+            return {"answer": result.get("answer", "")}
+        except LLMError as exc:
+            # 失败兜底：追问失败也返回可读文本，不崩溃
+            return {"answer": f"追问回答生成失败：{exc}"}
 
     # ------------------------------------------------------------------
     # 内部：跑图 + 收尾

@@ -44,6 +44,10 @@ class OfflineMockLLM:
             }
         if tool_name == "submit_verdict":
             return {"strength": "solid"}
+        if tool_name == "submit_answer":
+            return {
+                "answer": "根据已调研结论，AI Agent 市场 2025 年规模约 52 亿美元，预计 2028 年突破 300 亿美元，增速主要由任务成功率与生态集成驱动。"
+            }
         if tool_name == "submit_report":
             return {
                 "summary": "AI Agent 行业处于爆发前夜，2025 年规模约 52 亿美元，预计 2028 年突破 300 亿美元。价值捕获正从模型能力上移至任务成功率与生态集成。",

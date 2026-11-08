@@ -3795,3 +3795,53 @@ button {
     display: none;
   }
 }
+
+/* ---------------- 追问区（真实调研卡片，报告完成后显示） ---------------- */
+.follow-area {
+  margin-top: 18px;
+  padding: 14px 16px;
+  border-top: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.follow-area.hidden {
+  display: none;
+}
+.follow-row {
+  display: flex;
+  gap: 8px;
+}
+.follow-area .follow-input {
+  flex: 1;
+  min-width: 0;
+  padding: 9px 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  font-size: 13px;
+  outline: none;
+  background: var(--bg, #fff);
+  color: var(--ink, #222);
+}
+.follow-area .follow-input:focus {
+  border-color: var(--accent);
+}
+.follow-area .follow-btn {
+  padding: 0 16px;
+  border: none;
+  border-radius: 8px;
+  background: var(--accent, #5b6cff);
+  color: #fff;
+  font-size: 13px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.follow-area .follow-btn:hover {
+  opacity: 0.88;
+}
+.follow-area .follow-answer {
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--ink-dim, #5a6472);
+  white-space: pre-wrap;
+}
