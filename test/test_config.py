@@ -38,6 +38,8 @@ def test_load_env_does_not_override_existing(monkeypatch, tmp_path):
 
 
 def test_settings_from_env(monkeypatch):
+    # 隔离项目根目录的真实 .env（可能含 BASE_URL），专注测「从环境变量读取」
+    monkeypatch.setattr("backend.app.config._load_env", lambda *a, **k: None)
     monkeypatch.setenv("API_KEY", "k")
     monkeypatch.setenv("MODEL_ID", "glm-4v-flash")
     monkeypatch.setenv("BSAE_URL", "https://open.bigmodel.cn/api/anthropic")

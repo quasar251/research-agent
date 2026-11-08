@@ -1,0 +1,6 @@
+fastapi>=0.115
+uvicorn>=0.30
+anthropic>=0.40
+langgraph>=0.2
+langgraph-checkpoint-sqlite>=2.0
+pydantic>=2.7

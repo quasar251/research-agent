@@ -76,7 +76,8 @@ def main() -> None:
         matrix = result.get("matrix")
         print("覆盖度:", matrix.coverage if matrix else "N/A")
         print("结论数:", len(result.get("claims", [])))
-        print("报告:", (result.get("report", "") or "")[:200])
+        report = result.get("report")
+        print("报告:", (getattr(report, "summary", "") or "")[:200])
         print("记忆数:", len(runtime.get_memories()))
     except Exception as e:  # noqa: BLE001
         print("FAIL:", type(e).__name__, e)

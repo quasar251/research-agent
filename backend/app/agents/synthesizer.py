@@ -27,6 +27,26 @@ _SYNTHESIZE_SCHEMA = {
     "required": ["summary"],
 }
 
+# 证据强度中文标签，供摘要上下文展示置信度（对齐 security.md 四档）
+_STRENGTH_ZH = {
+    "solid": "实锤",
+    "inferred": "推断",
+    "consensus": "共识",
+    "divided": "分歧",
+}
+
+_SYNTHESIZER_SYSTEM_PROMPT = """你是一名行业调研的「合成员」，负责把所有已核查的结论聚合为一份结构化报告的摘要。
+
+# 职责边界
+你只管「结论矛不矛盾」：聚合去重结论、提炼摘要。
+你不重复做证据分级（核查员已完成），也不引入任何新的事实或数据。
+
+# 摘要编写要求
+- 把去重后的结论提炼为一段连贯的行业摘要，覆盖本次调研的核心发现。
+- 摘要要落到可验证的判断上，避免空泛套话；关键指标（如市场规模、增速）优先呈现。
+- 若结论之间存在分歧，如实呈现分歧，而非强行统一；证据弱（推断/分歧）的结论应降低确定性表述。
+- 只基于给定结论撰写，不得补充结论之外的数字或事实。"""
+
 
 def make_synthesizer_node(llm: LLMClient) -> Callable[[AgentState], dict]:
     """返回 synthesize 阶段的节点函数。"""
@@ -35,16 +55,24 @@ def make_synthesizer_node(llm: LLMClient) -> Callable[[AgentState], dict]:
         # 按角色编译上下文视图，聚合所有结论
         view = compile_context(AgentRole.SYNTHESIZER, state)
         claims = view["claims"]
-        claims_text = "\n".join(f"- {c.text}" for c in claims)
+        claims_text = "\n".join(
+            f"- {c.text}（证据强度：{_STRENGTH_ZH.get(c.strength.value, c.strength.value)}）"
+            for c in claims
+        )
         # 超预算则压缩，保留结论 id 作为来源指针
         if should_compress(claims_text, _BUDGET):
             claims_text = compress(claims_text, _BUDGET, [c.id for c in claims])
         result = llm.complete_structured(
             [
+                {"role": "system", "content": _SYNTHESIZER_SYSTEM_PROMPT},
                 {
                     "role": "user",
-                    "content": f"聚合以下结论，去重后产出一段摘要：\n{claims_text}",
-                }
+                    "content": (
+                        "以下是本次调研产出的结论（含证据强度）：\n\n"
+                        f"{claims_text}\n\n"
+                        "请聚合去重后产出一段摘要。"
+                    ),
+                },
             ],
             tool_name="submit_report",
             input_schema=_SYNTHESIZE_SCHEMA,

@@ -107,16 +107,23 @@ class AnthropicClient:
     def complete(self, messages: list[ChatMessage], max_tokens: int = 1024) -> str:
         if not self.circuit_breaker.allow():
             raise LLMError("熔断中，请求被拒绝", retryable=False)
+        # 提取 system 消息：anthropic 用独立 system 参数，不混入 messages
+        # （system 指令与不可信数据隔离，见 security.md 边界一）
+        system_parts = [m["content"] for m in messages if m["role"] == "system"]
+        rest = [m for m in messages if m["role"] != "system"]
         last: Exception | None = None
         for attempt in range(self.max_retries):
             try:
-                resp = self._client.messages.create(
-                    model=self.model,
-                    max_tokens=max_tokens,
-                    messages=messages,
+                kwargs: dict[str, Any] = {
+                    "model": self.model,
+                    "max_tokens": max_tokens,
+                    "messages": rest,
                     # 关闭深度思考：兼容端点（DeepSeek）返回 thinking 块会触发 SDK 解析 bug
-                    thinking={"type": "disabled"},
-                )
+                    "thinking": {"type": "disabled"},
+                }
+                if system_parts:
+                    kwargs["system"] = "\n\n".join(system_parts)
+                resp = self._client.messages.create(**kwargs)
                 self.circuit_breaker.record_success()
                 return "".join(b.text for b in resp.content if b.type == "text")
             except Exception as exc:  # noqa: BLE001 - 统一归类
@@ -135,12 +142,13 @@ class AnthropicClient:
         messages: list[ChatMessage],
         tool_name: str,
         input_schema: dict[str, Any],
-        max_tokens: int = 1024,
+        max_tokens: int = 4096,
     ) -> dict[str, Any]:
         """结构化输出。
 
-        当前端点（智谱 anthropic 兼容）不支持 tool use，降级为
+        当前端点（DeepSeek anthropic 兼容）不支持 tool use，降级为
         「prompt 引导 JSON 输出 + 容错解析 + 解析失败重试」。
+        默认 max_tokens=4096，避免复杂 schema（如研究计划）被截断。
         """
         schema_hint = json.dumps(input_schema, ensure_ascii=False)
         prompt = (

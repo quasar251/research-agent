@@ -41,6 +41,18 @@ _COLLECT_SCHEMA = {
     "required": ["claims"],
 }
 
+_COLLECTOR_SYSTEM_PROMPT = """你是一名行业调研的「搜集员」，负责针对具体子任务采集信息、抽取结构化结论，并附上证据来源。
+
+# 职责边界
+你只管「有没有、哪来的」：回答子问题、给出可溯源的结论。
+你不做证据可信度分级（交给核查员），也不做结论去重（交给合成员）。
+
+# 结论抽取要求
+- 每条结论（claim）必须是一条可独立验证的事实性陈述，避免空话、套话和主观评价。
+- 尽量为每条结论附上证据来源 URL（evidence_urls），指向支撑该结论的网页、报告或数据出处。
+- 不要编造数据或来源；对不确定的点宁可不写，也不要给出没有依据的数值。
+- 针对一个子任务给出 1~3 条精炼结论即可，重质量不重数量。"""
+
 
 def make_collector_node(llm: LLMClient) -> Callable[[AgentState], dict]:
     """返回 collect 阶段的节点函数。"""
@@ -57,7 +69,13 @@ def make_collector_node(llm: LLMClient) -> Callable[[AgentState], dict]:
 
         for t in pending:
             result = llm.complete_structured(
-                [{"role": "user", "content": f"子任务：{t.question}"}],
+                [
+                    {"role": "system", "content": _COLLECTOR_SYSTEM_PROMPT},
+                    {
+                        "role": "user",
+                        "content": f"子任务：{t.question}\n\n请针对该子任务抽取结论，并附上证据来源。",
+                    },
+                ],
                 tool_name="submit_claims",
                 input_schema=_COLLECT_SCHEMA,
             )
