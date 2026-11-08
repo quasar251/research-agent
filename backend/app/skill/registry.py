@@ -8,12 +8,16 @@ from ..state.schema import StageName
 
 @dataclass
 class Skill:
-    """一个 Skill：组合知识，绑定阶段。"""
+    """一个 Skill：组合知识，绑定阶段。
+
+    description 是一句话概述，用于渐进式披露：先只披露概述，模型确定需要时才加载 body。
+    """
 
     id: str
     name: str
     stage: StageName
     body: str  # Markdown 或结构化定义
+    description: str = ""  # 一句话概述（渐进式披露的摘要层）
     tool_refs: list[str] = field(default_factory=list)
 
 

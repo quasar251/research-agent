@@ -32,16 +32,18 @@ def test_compile_context_lead_sees_matrix_and_gaps():
         companies=["A"], dims=["规模"],
         cells=[MatrixCell(company="A", dim="规模", status=CellStatus.GAP)],
     )
-    view = compile_context(AgentRole.LEAD, state)
+    view, snapshot = compile_context(AgentRole.LEAD, state)
     assert view["matrix"].coverage == 0.0
     assert len(view["gaps"]) == 1
+    assert snapshot.role == AgentRole.LEAD
 
 
 def test_compile_context_verifier_sees_draft_claims():
     state = initial_state("r1", "u1", "intent")
     state["claims"] = [Claim(id="c1", text="x", strength=EvidenceStrength.INFERRED, role=AgentRole.COLLECTOR)]
-    view = compile_context(AgentRole.VERIFIER, state)
+    view, snapshot = compile_context(AgentRole.VERIFIER, state)
     assert len(view["draft_claims"]) == 1
+    assert snapshot.claim_ids == ["c1"]
 
 
 def test_snapshot_provenance():

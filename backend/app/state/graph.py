@@ -12,6 +12,7 @@ from __future__ import annotations
 from operator import add
 from typing import Annotated, TypedDict
 
+from ..context.snapshot import ContextSnapshot
 from .schema import (
     Claim,
     Evidence,
@@ -40,12 +41,15 @@ class AgentState(TypedDict, total=False):
     run_id: str
     user_id: str
     intent: str
+    depth: str  # simple / deep（deep 触发 HITL 审批）
     stage: StageName
     matrix: ResearchMatrix
     subtasks: Annotated[list[Subtask], _upsert_by_id]
     evidences: Annotated[list[Evidence], _upsert_by_id]
     claims: Annotated[list[Claim], _upsert_by_id]
     interventions: Annotated[list[HumanIntervention], add]
+    snapshots: Annotated[list[ContextSnapshot], add]
+    errors: Annotated[list[str], add]
     report: ReportModel
 
 
@@ -53,6 +57,7 @@ def initial_state(
     run_id: str,
     user_id: str,
     intent: str,
+    depth: str = "simple",
     stage: StageName = StageName.ALIGN,
 ) -> AgentState:
     """构造一次调研任务的初始状态。"""
@@ -60,11 +65,14 @@ def initial_state(
         "run_id": run_id,
         "user_id": user_id,
         "intent": intent,
+        "depth": depth,
         "stage": stage,
         "matrix": ResearchMatrix(),
         "subtasks": [],
         "evidences": [],
         "claims": [],
         "interventions": [],
+        "snapshots": [],
+        "errors": [],
         "report": "",
     }

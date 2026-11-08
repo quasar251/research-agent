@@ -82,7 +82,7 @@ def test_get_research_returns_completed_result():
 
 
 def test_stream_research():
-    resp = _client().get("/research/stream", params={"intent": "调研 AI 智能体"})
+    resp = _client().get("/research/r1/events", params={"intent": "调研 AI 智能体"})
     assert resp.status_code == 200
     assert "data:" in resp.text
     assert "[DONE]" in resp.text

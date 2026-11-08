@@ -169,6 +169,18 @@ class AnthropicClient:
             except (json.JSONDecodeError, ValueError, KeyError) as exc:
                 last = exc
                 if attempt < self.max_retries - 1:
+                    # 错误反馈 loop：把报错信息作为下一轮消息反馈给模型，
+                    # 让它看到上次输出的问题并修正，而不是盲目重新生成。
+                    new_messages.append(
+                        {
+                            "role": "user",
+                            "content": (
+                                f"你上一次的输出无法解析为合法 JSON，错误：{exc}。"
+                                f"请严格按 schema 重新输出一个完整的 JSON 对象，"
+                                f"不要输出 markdown 代码块或其他任何文字。"
+                            ),
+                        }
+                    )
                     self._retry_sleep(attempt)
         raise LLMError(f"JSON 解析重试 {self.max_retries} 次后仍失败: {last}", retryable=True)
 

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import hashlib
+import re
 
 
 def mask(text: str) -> str:
@@ -28,3 +29,27 @@ def redact(text: str, mode: str) -> str:
     if mode == "hash":
         return hash_text(text)
     return remove()
+
+
+# 常见个人身份信息（PII）模式：手机号 / 邮箱 / 身份证号
+_PII_PATTERNS = (
+    re.compile(r"1[3-9]\d{9}"),
+    re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}"),
+    re.compile(r"\d{17}[\dXx]"),
+)
+
+
+def detect_pii(text: str) -> list[str]:
+    """返回文本中命中的 PII 片段（空列表表示无 PII）。"""
+    found: list[str] = []
+    for pat in _PII_PATTERNS:
+        found.extend(m.group(0) for m in pat.finditer(text))
+    return found
+
+
+def sanitize(text: str, mode: str = "mask") -> str:
+    """检测并脱敏文本中的 PII（手机号 / 邮箱 / 身份证）。"""
+    result = text
+    for pat in _PII_PATTERNS:
+        result = pat.sub(lambda m: redact(m.group(0), mode), result)
+    return result

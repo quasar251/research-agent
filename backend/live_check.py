@@ -13,6 +13,7 @@ from app.config import Settings  # noqa: E402
 from app.llm.client import from_settings as llm_from_settings  # noqa: E402
 from app.memory.embedding import from_settings as emb_from_settings  # noqa: E402
 from app.runtime import ResearchRuntime  # noqa: E402
+from app.tools.search import DuckDuckGoSearch  # noqa: E402
 
 _PLAN_SCHEMA = {
     "type": "object",
@@ -71,7 +72,7 @@ def main() -> None:
     # 3. 完整调研
     print("\n=== 3. 完整调研 ===")
     try:
-        runtime = ResearchRuntime(llm, embedding=embedding)
+        runtime = ResearchRuntime(llm, embedding=embedding, search=DuckDuckGoSearch())
         result = runtime.run("live-1", "demo", "AI 智能体行业调研")
         matrix = result.get("matrix")
         print("覆盖度:", matrix.coverage if matrix else "N/A")
