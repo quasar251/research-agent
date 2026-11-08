@@ -22,7 +22,7 @@ class MockLLM:
         if tool_name == "submit_verdict":
             return {"strength": "solid"}
         if tool_name == "submit_report":
-            return {"report": "报告"}
+            return {"summary": "报告摘要"}
         return {}
 
 
@@ -34,8 +34,14 @@ def test_runtime_records_audit_and_metrics():
     types = [e.type for e in audit]
     assert "任务开始" in types
     assert "任务完成" in types
-    # 至少执行了 align/collect/verify/synthesize 四个节点
-    assert len([t for t in types if t == "节点执行"]) >= 4
+    # 阶段推进至少经历 collect / verify / synthesize 三次变化
+    stages = [e.subject for e in audit if e.type == "阶段推进"]
+    assert len(stages) >= 3
 
     # 最终状态覆盖度达标
     assert result["matrix"].coverage == 1.0
+
+    # 收尾蒸馏：verified 结论沉淀为长期记忆
+    memories = runtime.get_memories()
+    assert len(memories) >= 1
+    assert memories[0].namespace == "结论"

@@ -16,6 +16,7 @@ from .schema import (
     Claim,
     Evidence,
     HumanIntervention,
+    ReportModel,
     ResearchMatrix,
     StageName,
     Subtask,
@@ -45,7 +46,7 @@ class AgentState(TypedDict, total=False):
     evidences: Annotated[list[Evidence], _upsert_by_id]
     claims: Annotated[list[Claim], _upsert_by_id]
     interventions: Annotated[list[HumanIntervention], add]
-    report: str
+    report: ReportModel
 
 
 def initial_state(

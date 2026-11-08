@@ -6,10 +6,11 @@ from __future__ import annotations
 
 from typing import Callable
 
+from ..context.compiler import compile_context
 from ..llm.client import LLMClient
 from ..orchestration.supervisor import reopen_gaps
 from ..state.graph import AgentState
-from ..state.schema import Claim, ClaimStatus, EvidenceStrength
+from ..state.schema import AgentRole, Claim, ClaimStatus, EvidenceStrength
 
 _VERIFY_SCHEMA = {
     "type": "object",
@@ -27,12 +28,10 @@ def make_verifier_node(llm: LLMClient) -> Callable[[AgentState], dict]:
     """返回 verify 阶段的节点函数。"""
 
     def node(state: AgentState) -> dict:
-        claims = state.get("claims", [])
+        # 按角色编译上下文视图，只核查 draft 结论；非 draft 由 reducer 按 id 合并保留
+        view = compile_context(AgentRole.VERIFIER, state)
         verified: list[Claim] = []
-        for c in claims:
-            if c.status != ClaimStatus.DRAFT:
-                verified.append(c)
-                continue
+        for c in view["draft_claims"]:
             result = llm.complete_structured(
                 [
                     {

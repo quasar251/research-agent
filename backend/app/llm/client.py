@@ -1,15 +1,19 @@
 """LLM 层：anthropic sdk 封装（生产级）。
 
 生产级改造（对应 `reliability.md`）：
-- 结构化输出：用 tool use 强制 schema，替代「让模型输出 JSON 再赌它能 parse」
-- 超时 + 指数退避重试 + 错误分类（可重试 vs 不可重试）
+- 结构化输出：优先 tool use；端点不支持时降级为「prompt 引导 JSON + 容错解析」
+- 超时 + 指数退避重试 + 错误分类（可重试 vs 不可重试）+ 熔断冷却
 """
 from __future__ import annotations
 
+import json
+import re
 import time
 from typing import Any, Protocol, TypedDict
 
 import anthropic
+
+from .circuit_breaker import CircuitBreaker
 
 
 class ChatMessage(TypedDict):
@@ -65,6 +69,19 @@ def _classify(exc: Exception) -> LLMError:
     return LLMError(f"可重试错误: {exc}", retryable=True)
 
 
+def _parse_json(text: str) -> dict:
+    """从模型文本输出中容错提取 JSON 对象（容忍 markdown 代码块与前后噪声）。"""
+    text = text.strip()
+    m = re.search(r"```(?:json)?\s*(.*?)```", text, re.DOTALL)
+    if m:
+        text = m.group(1).strip()
+    start = text.find("{")
+    end = text.rfind("}")
+    if start != -1 and end != -1 and end > start:
+        text = text[start : end + 1]
+    return json.loads(text)
+
+
 class AnthropicClient:
     """基于 anthropic sdk 的 Claude 客户端。"""
 
@@ -72,18 +89,24 @@ class AnthropicClient:
         self,
         api_key: str,
         model: str = "claude-sonnet-4-5",
+        base_url: str | None = None,
         timeout: float = 60.0,
         max_retries: int = 3,
+        circuit_breaker: CircuitBreaker | None = None,
     ) -> None:
-        self._client = anthropic.Anthropic(api_key=api_key, timeout=timeout)
+        # base_url 支持 anthropic 兼容端点（如智谱 GLM 的 open.bigmodel.cn/api/anthropic）
+        self._client = anthropic.Anthropic(api_key=api_key, base_url=base_url, timeout=timeout)
         self.model = model
         self.timeout = timeout
         self.max_retries = max_retries
+        self.circuit_breaker = circuit_breaker or CircuitBreaker()
 
     def _retry_sleep(self, attempt: int) -> None:
         time.sleep(2 ** attempt)  # 指数退避 1s / 2s / 4s
 
     def complete(self, messages: list[ChatMessage], max_tokens: int = 1024) -> str:
+        if not self.circuit_breaker.allow():
+            raise LLMError("熔断中，请求被拒绝", retryable=False)
         last: Exception | None = None
         for attempt in range(self.max_retries):
             try:
@@ -91,15 +114,20 @@ class AnthropicClient:
                     model=self.model,
                     max_tokens=max_tokens,
                     messages=messages,
+                    # 关闭深度思考：兼容端点（DeepSeek）返回 thinking 块会触发 SDK 解析 bug
+                    thinking={"type": "disabled"},
                 )
+                self.circuit_breaker.record_success()
                 return "".join(b.text for b in resp.content if b.type == "text")
             except Exception as exc:  # noqa: BLE001 - 统一归类
                 err = _classify(exc)
                 if not err.retryable:
+                    self.circuit_breaker.record_failure()
                     raise err
                 last = exc
                 if attempt < self.max_retries - 1:
                     self._retry_sleep(attempt)
+        self.circuit_breaker.record_failure()
         raise LLMError(f"重试 {self.max_retries} 次后仍失败: {last}", retryable=True)
 
     def complete_structured(
@@ -109,38 +137,38 @@ class AnthropicClient:
         input_schema: dict[str, Any],
         max_tokens: int = 1024,
     ) -> dict[str, Any]:
-        tools = [
-            {
-                "name": tool_name,
-                "description": f"提交结构化结果：{tool_name}",
-                "input_schema": input_schema,
-            }
+        """结构化输出。
+
+        当前端点（智谱 anthropic 兼容）不支持 tool use，降级为
+        「prompt 引导 JSON 输出 + 容错解析 + 解析失败重试」。
+        """
+        schema_hint = json.dumps(input_schema, ensure_ascii=False)
+        prompt = (
+            f"{messages[-1]['content']}\n\n"
+            f"请只输出一个 JSON 对象，符合以下 schema，"
+            f"不要输出 markdown 代码块或其他任何文字：\n{schema_hint}"
+        )
+        new_messages: list[ChatMessage] = [
+            *messages[:-1],
+            {"role": "user", "content": prompt},
         ]
         last: Exception | None = None
         for attempt in range(self.max_retries):
+            # complete 已带熔断 + 超时重试；这里只处理 JSON 解析失败的重试
+            text = self.complete(new_messages, max_tokens)
             try:
-                resp = self._client.messages.create(
-                    model=self.model,
-                    max_tokens=max_tokens,
-                    tools=tools,
-                    tool_choice={"type": "tool", "name": tool_name},
-                    messages=messages,
-                )
-                for block in resp.content:
-                    if block.type == "tool_use":
-                        return dict(block.input)
-                # 未产出 tool_use，视为可重试
-                raise LLMError("模型未产出结构化输出", retryable=True)
-            except LLMError:
-                last = None
-                if attempt < self.max_retries - 1:
-                    self._retry_sleep(attempt)
-                continue
-            except Exception as exc:  # noqa: BLE001
-                err = _classify(exc)
-                if not err.retryable:
-                    raise err
+                return _parse_json(text)
+            except (json.JSONDecodeError, ValueError, KeyError) as exc:
                 last = exc
                 if attempt < self.max_retries - 1:
                     self._retry_sleep(attempt)
-        raise LLMError(f"结构化输出重试 {self.max_retries} 次后仍失败: {last}", retryable=True)
+        raise LLMError(f"JSON 解析重试 {self.max_retries} 次后仍失败: {last}", retryable=True)
+
+
+def from_settings(settings) -> "AnthropicClient":
+    """从 Settings（config.py）创建客户端，接入 .env 里的端点与密钥。"""
+    return AnthropicClient(
+        api_key=settings.llm.api_key,
+        model=settings.llm.model,
+        base_url=settings.llm.base_url,
+    )

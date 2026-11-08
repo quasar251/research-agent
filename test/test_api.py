@@ -3,6 +3,15 @@ from fastapi.testclient import TestClient
 
 from backend.app.main import create_app
 from backend.app.llm.client import ChatMessage
+from backend.app.state.schema import (
+    AgentRole,
+    CellStatus,
+    Claim,
+    EvidenceStrength,
+    MatrixCell,
+    ReportModel,
+    ResearchMatrix,
+)
 
 
 class MockLLM:
@@ -31,7 +40,7 @@ class MockLLM:
         if tool_name == "submit_verdict":
             return {"strength": "solid"}
         if tool_name == "submit_report":
-            return {"report": "最终报告"}
+            return {"summary": "最终报告摘要"}
         return {}
 
 
@@ -39,11 +48,36 @@ def _client():
     return TestClient(create_app(MockLLM()))
 
 
-def test_create_research():
+def test_create_research_returns_pending():
     resp = _client().post("/research", json={"intent": "调研 AI 智能体"})
     assert resp.status_code == 200
     data = resp.json()
-    assert data["report"] == "最终报告"
+    assert data["status"] == "pending"
+    assert "run_id" in data
+
+
+def test_get_research_not_found():
+    resp = _client().get("/research/nonexistent")
+    assert resp.status_code == 404
+
+
+def test_get_research_returns_completed_result():
+    app = create_app(MockLLM())
+    app.state.task_store.create("r1", "调研")
+    matrix = ResearchMatrix(
+        companies=["A"], dims=["规模"],
+        cells=[MatrixCell(company="A", dim="规模", status=CellStatus.COVERED)],
+    )
+    app.state.task_store.update("r1", "completed", {
+        "report": ReportModel(topic="调研", summary="最终报告摘要"),
+        "matrix": matrix,
+        "claims": [Claim(id="c1", text="x", strength=EvidenceStrength.SOLID, role=AgentRole.COLLECTOR)],
+    })
+    client = TestClient(app)
+    resp = client.get("/research/r1")
+    data = resp.json()
+    assert data["status"] == "completed"
+    assert data["report"]["summary"] == "最终报告摘要"
     assert data["metrics"]["coverage"] == 1.0
 
 

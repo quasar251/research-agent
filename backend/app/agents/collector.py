@@ -8,7 +8,9 @@ from __future__ import annotations
 import uuid
 from typing import Callable
 
+from ..context.compiler import compile_context
 from ..llm.client import LLMClient
+from ..security.injection import is_safe
 from ..state.graph import AgentState
 from ..state.schema import (
     AgentRole,
@@ -44,11 +46,9 @@ def make_collector_node(llm: LLMClient) -> Callable[[AgentState], dict]:
     """返回 collect 阶段的节点函数。"""
 
     def node(state: AgentState) -> dict:
-        pending = [
-            t
-            for t in state.get("subtasks", [])
-            if t.status == TaskStatus.PENDING and t.stage == StageName.COLLECT
-        ]
+        # 按角色编译上下文视图，只看到本角色该看的 pending 子任务
+        view = compile_context(AgentRole.COLLECTOR, state)
+        pending = view["pending_subtasks"]
 
         new_claims: list[Claim] = []
         new_evidences: list[Evidence] = []
@@ -63,6 +63,9 @@ def make_collector_node(llm: LLMClient) -> Callable[[AgentState], dict]:
             )
             claim_ids: list[str] = []
             for c in result.get("claims", []):
+                # 注入防护：外部采集内容进入状态前扫描，命中则跳过（security.md 边界一）
+                if not is_safe(c.get("text", "")):
+                    continue
                 ev_ids: list[str] = []
                 for url in c.get("evidence_urls", []):
                     ev = Evidence(

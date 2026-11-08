@@ -6,6 +6,7 @@ from __future__ import annotations
 
 from typing import Callable
 
+from ..context.compiler import compile_context
 from ..llm.client import LLMClient
 from ..state.graph import AgentState
 from ..state.schema import (
@@ -45,7 +46,9 @@ def make_lead_node(llm: LLMClient) -> Callable[[AgentState], dict]:
     """返回 align 阶段的节点函数。"""
 
     def node(state: AgentState) -> dict:
-        intent = state["intent"]
+        # 按角色编译上下文视图（状态是事实，上下文是视图）
+        view = compile_context(AgentRole.LEAD, state)
+        intent = view["intent"]
         plan = llm.complete_structured(
             [{"role": "user", "content": f"调研意图：{intent}。请生成研究计划。"}],
             tool_name="submit_plan",

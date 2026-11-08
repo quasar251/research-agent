@@ -186,3 +186,35 @@ class RootState(BaseModel):
     claims: list[Claim] = Field(default_factory=list)
     interventions: list[HumanIntervention] = Field(default_factory=list)
     checkpoints: list[Checkpoint] = Field(default_factory=list)
+
+
+# ---------------------------------------------------------------------------
+# 结构化报告（Synthesizer 产出，对齐前端 Report 接口）
+# ---------------------------------------------------------------------------
+
+
+class ReportTakeaway(BaseModel):
+    """报告核心结论（对齐前端 Takeaway）。"""
+
+    text: str
+    strength: EvidenceStrength
+    refs: list[int] = Field(default_factory=list)  # 指向 citations 下标
+
+
+class ReportCitation(BaseModel):
+    """报告引用（对齐前端 Citation）。"""
+
+    title: str
+    source: str
+    date: str = ""
+    strength: EvidenceStrength | None = None
+
+
+class ReportModel(BaseModel):
+    """结构化报告（对齐前端 Report 接口）。"""
+
+    topic: str
+    summary: str
+    takeaways: list[ReportTakeaway] = Field(default_factory=list)
+    citations: list[ReportCitation] = Field(default_factory=list)
+    coverage: float = 0.0

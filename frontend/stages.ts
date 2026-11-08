@@ -3,6 +3,7 @@ import {
   type Report,
   type Section,
   type SwotItem,
+  type Citation,
   type ReportDepth,
 } from './mock';
 import { esc } from './common';
@@ -28,6 +29,29 @@ function miniItem(html: string): string {
 
 function miniIcon(agent: string): string {
   return `<span class="mini-icon" style="background:${AGENT_COLOR[agent]}">${AGENT_LETTER[agent]}</span>`;
+}
+
+/** 包裹若干 mini-item 的列表容器 */
+function miniList(...items: string[]): string {
+  return `<div class="mini-list">${items.join('')}</div>`;
+}
+
+/** 结论块：doc-h2 标题 + 高亮 doc-text（带前缀） */
+function insightBlock(heading: string, prefix: string, text: string): string {
+  return `<div class="doc-h2" style="margin-top:20px;">${heading}</div>
+      <div class="doc-text" style="background-color:var(--bg-elev);padding:16px;border-radius:12px;border-left:3px solid var(--dag-primary);">
+        <strong>${prefix}：</strong>${esc(text)}
+      </div>`;
+}
+
+function citationItem(c: Citation, i: number): string {
+  return miniItem(`<strong>[${i + 1}]</strong> ${esc(c.title)} <span class="strength strength-${c.strength}">${STRENGTH_LABEL[c.strength]}</span> · ${esc(c.source)}`);
+}
+
+/** 引用列表（可选裁剪前 limit 条） */
+function citationList(citations: Citation[], limit?: number): string {
+  const list = limit === undefined ? citations : citations.slice(0, limit);
+  return miniList(...list.map(citationItem));
 }
 
 /** 按深度过滤可见章节 */
@@ -93,9 +117,9 @@ export function buildStages(r: Report, depth: ReportDepth): StageDef[] {
     { title: '产业链深度分析', desc: '绘制产业链图谱，分析上下游技术壁垒与议价能力。', agent: 'Analyst' },
     { title: 'SWOT 模型构建', desc: `结合市场数据，输出 ${r.domain} 的 SWOT 矩阵。`, agent: 'Analyst' },
   ];
-  const taskList = `<div class="mini-list">` + tasks.map((t) =>
+  const taskList = miniList(...tasks.map((t) =>
     miniItem(`${miniIcon(t.agent)}<div><strong>${esc(t.title)}：</strong>${esc(t.desc)}</div>`)
-  ).join('') + `</div>`;
+  ));
 
   const stage1: StageDef = {
     title: '阶段一 · 任务拆解',
@@ -138,11 +162,11 @@ export function buildStages(r: Report, depth: ReportDepth): StageDef[] {
         ms: 3500,
       },
     ],
-    result: `<div class="mini-list">
-      ${miniItem('<strong>检索渠道：</strong>IDC / Gartner 行业报告库、arXiv 论文库、各厂商官网财报、政策文件库')}
-      ${miniItem(`<strong>关键文档：</strong>${esc(docList)}`)}
-      ${miniItem(`<strong>数据产出：</strong>${esc(marketSection?.heading ?? '市场规模')} 数据表 ×1，共 42 条有效信息源`)}
-    </div>`,
+    result: miniList(
+      miniItem('<strong>检索渠道：</strong>IDC / Gartner 行业报告库、arXiv 论文库、各厂商官网财报、政策文件库'),
+      miniItem(`<strong>关键文档：</strong>${esc(docList)}`),
+      miniItem(`<strong>数据产出：</strong>${esc(marketSection?.heading ?? '市场规模')} 数据表 ×1，共 42 条有效信息源`),
+    ),
     hitl: '阶段二结果：Scout 已检索 4 类渠道、多份关键文档，共 42 条信息源。请确认是否进行下一步深度分析？',
   };
 
@@ -159,11 +183,11 @@ export function buildStages(r: Report, depth: ReportDepth): StageDef[] {
       ],
       ms: 6500,
     }],
-    result: `<div class="mini-list">
-      ${miniItem('<strong>分析方法：</strong>产业链分析（波特五力）、SWOT 模型、市场规模自下而上估算')}
-      ${miniItem('<strong>分析过程：</strong>先绘制产业链图谱识别核心壁垒，再结合份额数据交叉验证，输出 SWOT 矩阵')}
-      ${miniItem(`<strong>初步结论：</strong>${esc(overview?.paragraphs?.[0] ?? r.summary)}`)}
-    </div>${swotSection?.swot ? swotGrid(swotSection.swot) : ''}`,
+    result: `${miniList(
+      miniItem('<strong>分析方法：</strong>产业链分析（波特五力）、SWOT 模型、市场规模自下而上估算'),
+      miniItem('<strong>分析过程：</strong>先绘制产业链图谱识别核心壁垒，再结合份额数据交叉验证，输出 SWOT 矩阵'),
+      miniItem(`<strong>初步结论：</strong>${esc(overview?.paragraphs?.[0] ?? r.summary)}`),
+    )}${swotSection?.swot ? swotGrid(swotSection.swot) : ''}`,
     hitl: '阶段三结果：Analyst 已用产业链分析 + SWOT 方法输出结论与矩阵，请确认。',
   };
 
@@ -180,11 +204,11 @@ export function buildStages(r: Report, depth: ReportDepth): StageDef[] {
       ],
       ms: 5500,
     }],
-    result: `<div class="mini-list">
-      ${miniItem('<strong>观点溯源：</strong>对 SWOT 四项结论逐条回溯，均命中 Scout 检索的原始报告与财报，无凭空推断')}
-      ${miniItem('<strong>数据核验：</strong>份额数据与 Gartner 口径交叉比对，误差 &lt; 2%；营收增长率已剔除汇率影响')}
-      ${miniItem('<strong>审查意见：</strong>「开源框架追赶」威胁项建议补充时间窗口（预计 12-18 个月），已反馈 Master')}
-    </div>`,
+    result: miniList(
+      miniItem('<strong>观点溯源：</strong>对 SWOT 四项结论逐条回溯，均命中 Scout 检索的原始报告与财报，无凭空推断'),
+      miniItem('<strong>数据核验：</strong>份额数据与 Gartner 口径交叉比对，误差 &lt; 2%；营收增长率已剔除汇率影响'),
+      miniItem('<strong>审查意见：</strong>「开源框架追赶」威胁项建议补充时间窗口（预计 12-18 个月），已反馈 Master'),
+    ),
     hitl: null,
   };
 
@@ -202,13 +226,7 @@ export function buildStages(r: Report, depth: ReportDepth): StageDef[] {
       ],
       ms: 5000,
     }],
-    result: `<div class="doc-h2" style="margin-top:20px;">综合洞察与建议</div>
-      <div class="doc-text" style="background-color:var(--bg-elev);padding:16px;border-radius:12px;border-left:3px solid var(--dag-primary);">
-        <strong>研小报协同结论：</strong>${esc(insight)}
-      </div>
-      <div class="mini-list">${r.citations.map((c, i) =>
-        miniItem(`<strong>[${i + 1}]</strong> ${esc(c.title)} <span class="strength strength-${c.strength}">${STRENGTH_LABEL[c.strength]}</span> · ${esc(c.source)}`)
-      ).join('')}</div>`,
+    result: `${insightBlock('综合洞察与建议', '研小报协同结论', insight)}${citationList(r.citations)}`,
     hitl: null,
   };
 
@@ -249,11 +267,11 @@ function buildSimpleStages(r: Report): StageDef[] {
         ms: 3200,
       },
     ],
-    result: `<div class="mini-list">
-      ${miniItem('<strong>检索渠道：</strong>行业报告库、厂商官网财报')}
-      ${miniItem(`<strong>关键文档：</strong>${esc(keyDocs)}`)}
-      ${miniItem('<strong>数据产出：</strong>12 条有效信息源（轻量口径）')}
-    </div>`,
+    result: miniList(
+      miniItem('<strong>检索渠道：</strong>行业报告库、厂商官网财报'),
+      miniItem(`<strong>关键文档：</strong>${esc(keyDocs)}`),
+      miniItem('<strong>数据产出：</strong>12 条有效信息源（轻量口径）'),
+    ),
     hitl: null,
   };
 
@@ -266,10 +284,10 @@ function buildSimpleStages(r: Report): StageDef[] {
         ms: 3000,
       },
     ],
-    result: `<div class="mini-list">
-      ${miniItem(`<strong>市场数据：</strong>${esc(marketSection?.heading ?? '市场规模')} 速览`)}
-      ${miniItem(`<strong>速览结论：</strong>${esc(overview?.paragraphs?.[0] ?? r.summary)}`)}
-    </div>`,
+    result: miniList(
+      miniItem(`<strong>市场数据：</strong>${esc(marketSection?.heading ?? '市场规模')} 速览`),
+      miniItem(`<strong>速览结论：</strong>${esc(overview?.paragraphs?.[0] ?? r.summary)}`),
+    ),
     hitl: null,
   };
 
@@ -287,19 +305,7 @@ function buildSimpleStages(r: Report): StageDef[] {
         ms: 2400,
       },
     ],
-    result: `<div class="doc-h2" style="margin-top:20px;">核心结论</div>
-      <div class="doc-text" style="background-color:var(--bg-elev);padding:16px;border-radius:12px;border-left:3px solid var(--dag-primary);">
-        <strong>研小报速览结论：</strong>${esc(insight)}
-      </div>
-      <div class="mini-list">${r.citations
-        .slice(0, 2)
-        .map(
-          (c, i) =>
-            miniItem(
-              `<strong>[${i + 1}]</strong> ${esc(c.title)} <span class="strength strength-${c.strength}">${STRENGTH_LABEL[c.strength]}</span> · ${esc(c.source)}`,
-            ),
-        )
-        .join('')}</div>`,
+    result: `${insightBlock('核心结论', '研小报速览结论', insight)}${citationList(r.citations, 2)}`,
     hitl: null,
   };
 

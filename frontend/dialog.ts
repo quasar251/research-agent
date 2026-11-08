@@ -857,6 +857,11 @@ function appendAfter(rt: CardRuntime, html: string): void {
   if (el instanceof HTMLElement) rt.tail = el;
 }
 
+/** 追问按所选模型计费（Mock） */
+function followCost(model?: string): number {
+  return usageForModel(model ?? 'pro').cost;
+}
+
 function followReply(r: Report, q0: string, model: string): { label: string; bullets: string[] } {
   return {
     label: `追问 · ${r.domain} · ${MODEL_LABEL[model] ?? model}`,
@@ -875,14 +880,13 @@ function askFollowUp(rt: CardRuntime, raw: string): void {
   if (input) input.value = '';
 
   const model = state.model;
-  const usage = usageForModel(model);
   const reply = followReply(rt.report, q0, model);
   const time = fmtTime(new Date());
   const baseIndex = activeConv ? activeConv.messages.length : -1;
   appendAfter(rt, userMsgHtml(q0, 'follow-user', baseIndex, rt.threadId));
   appendAfter(rt, followAgentHtml(reply.label, reply.bullets, time, model, baseIndex >= 0 ? baseIndex + 1 : -1, rt.threadId));
 
-  setTodaySpend(todaySpend + usage.cost);
+  setTodaySpend(todaySpend + followCost(model));
   if (activeConv) {
     activeConv.messages.push({ type: 'follow-user', text: q0 });
     activeConv.messages.push({ type: 'follow-agent', label: reply.label, bullets: reply.bullets, time, model });
@@ -928,7 +932,7 @@ function deleteFollowMessage(msg: HTMLElement, rt: CardRuntime): void {
   let refund = 0;
 
   const self = activeConv?.messages[idx];
-  if (self?.type === 'follow-agent') refund += usageForModel(self.model ?? 'pro').cost;
+  if (self?.type === 'follow-agent') refund += followCost(self.model);
 
   // 删除追问问题时，连同它下面的 Agent 回复一起删
   const reply = msg.nextElementSibling;
@@ -938,7 +942,7 @@ function deleteFollowMessage(msg: HTMLElement, rt: CardRuntime): void {
     reply.dataset.role === 'follow-agent'
   ) {
     const rm = activeConv?.messages[idx + 1];
-    if (rm?.type === 'follow-agent') refund += usageForModel(rm.model ?? 'pro').cost;
+    if (rm?.type === 'follow-agent') refund += followCost(rm.model);
     count = 2;
     if (rt.tail === reply) rt.tail = msg;
     reply.remove();
@@ -1019,7 +1023,7 @@ function editFollowMessage(msg: HTMLElement, rt: CardRuntime): void {
     const newReplyEl = msg.nextElementSibling;
     if (rt.tail === msg && newReplyEl instanceof HTMLElement) rt.tail = newReplyEl;
 
-    setTodaySpend(Math.max(0, todaySpend + usageForModel(model).cost - usageForModel(oldModel).cost));
+    setTodaySpend(Math.max(0, todaySpend + followCost(model) - followCost(oldModel)));
     saveConvs();
     refreshSidebar();
     scrollBottom();
