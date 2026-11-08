@@ -149,3 +149,33 @@
 
 - **检查点**：第 30 步崩溃，从第 30 步恢复，保证确定性续跑。
 - **静默缺口是最危险的状态**：缺口要么被重派，要么显式标记 unresolved，绝不静默跳过。
+
+---
+
+## 三、持久化 schema（生产级）
+
+台账落 SQLite，检查点由 LangGraph SqliteSaver 管理。
+
+### 3.1 表结构
+
+| 表 | 字段 | 说明 |
+|---|---|---|
+| `runs` | run_id PK, user_id, intent, stage, status, created_at | 运行元数据（run 级幂等键） |
+| `matrix_cells` | run_id, company, dim, status, summary | 研究矩阵格子，联合主键 (run_id, company, dim) |
+| `subtasks` | id PK, run_id, question, role, stage, status, dependencies(JSON), retry_count, retry_limit, output_ref | 子任务台账 |
+| `evidences` | id PK, run_id, url, fetched_at, credibility, source_level | 证据台账 |
+| `claims` | id PK, run_id, text, strength, evidence_refs(JSON), role, status, created_at | 结论台账 |
+| `interventions` | id PK, run_id, checkpoint_id, operator, decision, timestamp | 人工干预记录 |
+| `checkpoints` | thread_id, checkpoint_id, state(BLOB), parent_id | 由 SqliteSaver 管理，不手动写 |
+
+### 3.2 索引
+
+- `subtasks(run_id)`、`claims(run_id)`、`evidences(run_id)`：按 run 查询台账。
+- `subtasks(status)`：缺口重派时快速筛选 pending。
+- `runs(status)`：任务状态查询。
+
+### 3.3 迁移策略
+
+- 用增量迁移脚本（schema 版本号），每版新增 `ALTER` / 新表，不破坏旧数据。
+- 检查点状态序列化为 JSON BLOB，schema 变更后旧检查点**向后兼容**（新增字段给默认值，不删旧字段）。
+- 数据生命周期：completed 的 run 归档保留 90 天，超期清理（见 `operations.md`）。

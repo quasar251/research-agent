@@ -75,3 +75,25 @@
 - `eval.md`：**看见了好不好**——报告质量、事实引用、过程质量的三层评分。
 
 两者互补：先有可观测性（有数据可看），再有评估（对看到的数据打分）。
+
+---
+
+## 7. 生产级落地规范
+
+### 7.1 指标名（供 `operations.md` 采集）
+
+| 指标名 | 类型 | 说明 |
+|---|---|---|
+| `research_coverage` | gauge | 覆盖度 0~1 |
+| `research_unresolved_ratio` | gauge | unresolved 子任务占比 |
+| `llm_latency_p95` | histogram | LLM 调用时延 p95 |
+| `llm_retry_ratio` | gauge | 重试占比 |
+| `token_consumed_total` | counter | token 累计消耗 |
+
+### 7.2 日志字段规范
+
+统一结构化字段：`timestamp` / `level` / `run_id` / `thread_id` / `event` / `payload`（见 `operations.md` §5）。
+
+### 7.3 trace 传播
+
+`run_id` + `thread_id` 贯穿全链路：HTTP 头 → 图执行 → LLM / 工具调用 → 审计事件，保证任意一步都能关联回所属调研任务。

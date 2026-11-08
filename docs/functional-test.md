@@ -63,3 +63,24 @@
 
 - `functional-test.md`：测**流程对不对**（状态转换、缺口处理、断点续跑）。
 - `eval.md`：评**产出好不好**（报告质量、事实引用、过程溯源）。
+
+---
+
+## 6. 生产级关注点（测试金字塔）
+
+### 6.1 分层
+
+| 层 | 对应测试 | 说明 |
+|---|---|---|
+| 单元测试 | `test_state` / `test_orchestration` / `test_crosscutting` | 状态转换、reducer、纯逻辑 |
+| 集成测试 | `test_flow` / `test_api` | 图流程、接口 |
+| 端到端冒烟 | 真实 LLM（可选） | CI 不强制，发布前手动 |
+
+### 6.2 覆盖率目标
+
+- 核心模块（state / orchestration / agents）覆盖率 ≥ 80%。
+
+### 6.3 CI 集成
+
+- PR 触发 pytest + 覆盖率门禁（见 `operations.md` §6）。
+- 失败阻断合并。

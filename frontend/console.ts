@@ -1,7 +1,7 @@
-import { reports } from './mock';
+import { reports, suggestions } from './mock';
 import { esc } from './common';
 import { conversations, todaySpend } from './store';
-import { isResearchRunning, restoreFollowDock } from './dialog';
+import { isResearchRunning, restoreFollowDock, showWelcome } from './dialog';
 
 /* ================================================================
  * 用户控制台 · 调研台账（独立页面视图，复用 .main 布局与顶栏）
@@ -187,10 +187,15 @@ export function openConsole(): void {
   main.appendChild(view);
   consoleOpen = true;
 
-  view.querySelector('#consoleBack')!.addEventListener('click', closeConsole);
+  /* 返回调研台：关闭控制台并回到「新建任务」欢迎页（与面包屑文案一致） */
+  const backToDesk = () => {
+    closeConsole();
+    showWelcome(suggestions);
+  };
+  view.querySelector('#consoleBack')!.addEventListener('click', backToDesk);
   const onKey = (e: KeyboardEvent) => {
     if (e.key === 'Escape') {
-      closeConsole();
+      backToDesk();
       main.removeEventListener('keydown', onKey);
     }
   };
