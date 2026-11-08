@@ -33,12 +33,14 @@ def test_coverage_empty_matrix_is_zero():
 
 
 def test_upsert_by_id_merges_same_id():
-    a = Subtask(id="t1", question="q", role=AgentRole.COLLECTOR, stage=StageName.COLLECT)
+    a = Subtask(id="t1", question="q", role=AgentRole.COLLECTOR, stage=StageName.COLLECT, company="A", dim="规模")
     b = Subtask(
         id="t1",
         question="q2",
         role=AgentRole.COLLECTOR,
         stage=StageName.COLLECT,
+        company="A",
+        dim="规模",
         status=TaskStatus.COMPLETED,
     )
     merged = _upsert_by_id([a], [b])
@@ -47,8 +49,8 @@ def test_upsert_by_id_merges_same_id():
 
 
 def test_upsert_by_id_keeps_distinct_ids():
-    a = Subtask(id="t1", question="q", role=AgentRole.COLLECTOR, stage=StageName.COLLECT)
-    b = Subtask(id="t2", question="q", role=AgentRole.VERIFIER, stage=StageName.VERIFY)
+    a = Subtask(id="t1", question="q", role=AgentRole.COLLECTOR, stage=StageName.COLLECT, company="A", dim="规模")
+    b = Subtask(id="t2", question="q", role=AgentRole.VERIFIER, stage=StageName.VERIFY, company="A", dim="格局")
     merged = _upsert_by_id([a], [b])
     assert len(merged) == 2
 

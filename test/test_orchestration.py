@@ -3,6 +3,7 @@ from backend.app.state.schema import (
     AgentRole,
     CellStatus,
     MatrixCell,
+    ResearchMatrix,
     StageName,
     Subtask,
     TaskStatus,
@@ -12,12 +13,17 @@ from backend.app.orchestration.supervisor import (
     ready_subtasks,
     find_gaps,
     exhausted,
+    reopen_gaps,
+    has_pending_collect,
 )
 from backend.app.orchestration.dispatch import group_by_role, aggregate
 
 
 def _subtask(id: str, role: AgentRole, deps: list[str] | None = None) -> Subtask:
-    return Subtask(id=id, question="q", role=role, stage=StageName.COLLECT, dependencies=deps or [])
+    return Subtask(
+        id=id, question="q", role=role, stage=StageName.COLLECT,
+        company="A", dim="规模", dependencies=deps or [],
+    )
 
 
 def test_next_stage_linear_order():
@@ -73,3 +79,32 @@ def test_aggregate_reports_gaps_and_unresolved():
     result = aggregate(cells, [t])
     assert len(result["gaps"]) == 1
     assert len(result["unresolved"]) == 1
+
+
+def test_reopen_gaps_reopens_gap_subtask():
+    cells = [MatrixCell(company="A", dim="规模", status=CellStatus.GAP)]
+    matrix = ResearchMatrix(companies=["A"], dims=["规模"], cells=cells)
+    t = _subtask("t1", AgentRole.COLLECTOR).model_copy(
+        update={"status": TaskStatus.COMPLETED}
+    )
+    subtasks, new_matrix = reopen_gaps([t], matrix)
+    assert subtasks[0].status == TaskStatus.PENDING
+    assert subtasks[0].retry_count == 1
+
+
+def test_reopen_gaps_marks_unresolved_at_limit():
+    cells = [MatrixCell(company="A", dim="规模", status=CellStatus.GAP)]
+    matrix = ResearchMatrix(companies=["A"], dims=["规模"], cells=cells)
+    t = _subtask("t1", AgentRole.COLLECTOR).model_copy(
+        update={"status": TaskStatus.COMPLETED, "retry_count": 2, "retry_limit": 3}
+    )
+    subtasks, new_matrix = reopen_gaps([t], matrix)
+    assert subtasks[0].status == TaskStatus.UNRESOLVED
+    assert new_matrix.cells[0].status == CellStatus.UNRESOLVED
+
+
+def test_has_pending_collect():
+    pending = _subtask("t1", AgentRole.COLLECTOR)
+    done = _subtask("t2", AgentRole.COLLECTOR).model_copy(update={"status": TaskStatus.COMPLETED})
+    assert has_pending_collect([pending, done]) is True
+    assert has_pending_collect([done]) is False

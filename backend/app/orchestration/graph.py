@@ -13,10 +13,16 @@ from ..agents.synthesizer import make_synthesizer_node
 from ..agents.verifier import make_verifier_node
 from ..llm.client import LLMClient
 from ..state.graph import AgentState
+from .supervisor import has_pending_collect
+
+
+def _route_after_verify(state: AgentState) -> str:
+    """verify 后路由：仍有待搜集缺口 → 回 collect；否则 → synthesize。"""
+    return "collect" if has_pending_collect(state.get("subtasks", [])) else "synthesize"
 
 
 def build_graph(llm: LLMClient, checkpointer=None):
-    """构建四阶段调研图。可传入 checkpointer（如 SqliteSaver）以支持断点续跑。"""
+    """构建四阶段调研图（含缺口重派循环）。可传入 checkpointer 支持断点续跑。"""
     g = StateGraph(AgentState)
 
     g.add_node("align", make_lead_node(llm))
@@ -27,7 +33,11 @@ def build_graph(llm: LLMClient, checkpointer=None):
     g.set_entry_point("align")
     g.add_edge("align", "collect")
     g.add_edge("collect", "verify")
-    g.add_edge("verify", "synthesize")
+    g.add_conditional_edges(
+        "verify",
+        _route_after_verify,
+        {"collect": "collect", "synthesize": "synthesize"},
+    )
     g.add_edge("synthesize", END)
 
     return g.compile(checkpointer=checkpointer)

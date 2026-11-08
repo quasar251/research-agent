@@ -9,19 +9,30 @@ class MockLLM:
     model = "mock"
 
     def complete(self, messages: list[ChatMessage], max_tokens: int = 1024) -> str:
-        content = messages[-1]["content"]
-        if "规划者 Lead" in content:
-            return (
-                '{"companies": ["公司A"], "dims": ["市场规模"], '
-                '"subtasks": [{"id": "t1", "question": "市场规模是多少", "dependencies": []}]}'
-            )
-        if "搜集者 Collector" in content:
-            return '{"claims": [{"text": "规模约 52 亿美元", "evidence_urls": ["https://x.com"]}]}'
-        if "核查者 Verifier" in content:
-            return '{"strength": "solid"}'
-        if "合成者 Synthesizer" in content:
-            return '{"report": "最终报告"}'
         return "{}"
+
+    def complete_structured(self, messages, tool_name, input_schema, max_tokens=1024) -> dict:
+        if tool_name == "submit_plan":
+            return {
+                "companies": ["公司A"],
+                "dims": ["市场规模"],
+                "subtasks": [
+                    {
+                        "id": "t1",
+                        "question": "市场规模是多少",
+                        "company": "公司A",
+                        "dim": "市场规模",
+                        "dependencies": [],
+                    }
+                ],
+            }
+        if tool_name == "submit_claims":
+            return {"claims": [{"text": "规模约 52 亿美元", "evidence_urls": ["https://x.com"]}]}
+        if tool_name == "submit_verdict":
+            return {"strength": "solid"}
+        if tool_name == "submit_report":
+            return {"report": "最终报告"}
+        return {}
 
 
 def _client():

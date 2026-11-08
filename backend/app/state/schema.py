@@ -119,6 +119,8 @@ class Subtask(BaseModel):
     question: str
     role: AgentRole
     stage: StageName
+    company: str  # 绑定的矩阵格子坐标（公司）
+    dim: str      # 绑定的矩阵格子坐标（维度）
     status: TaskStatus = TaskStatus.PENDING
     dependencies: list[str] = Field(default_factory=list)
     retry_count: int = 0

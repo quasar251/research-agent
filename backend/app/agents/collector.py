@@ -1,7 +1,7 @@
 """Collector 角色：搜集（collect 阶段）。
 
-按 pending 子任务采集信息，抽取结构化结论（Claim）+ 登记证据（Evidence），
-并把对应矩阵格子置为 covered。
+按 pending 子任务采集信息，抽取结论（Claim）+ 登记证据（Evidence），
+并按子任务绑定的 company×dim 精确更新对应矩阵格子（真实映射，非"前 N 个"）。
 """
 from __future__ import annotations
 
@@ -20,19 +20,24 @@ from ..state.schema import (
     Subtask,
     TaskStatus,
 )
-from . import parse_json
 
-_PROMPT = """你是行业调研的搜集者 Collector。请针对子任务采集信息，产出带证据的结论。
-
-子任务：{question}
-
-只输出 JSON，不要输出任何其他文字，格式如下：
-{{
-  "claims": [
-    {{"text": "结论内容", "evidence_urls": ["https://example.com/source"]}}
-  ]
-}}
-"""
+_COLLECT_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "claims": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "text": {"type": "string"},
+                    "evidence_urls": {"type": "array", "items": {"type": "string"}},
+                },
+                "required": ["text"],
+            },
+        },
+    },
+    "required": ["claims"],
+}
 
 
 def make_collector_node(llm: LLMClient) -> Callable[[AgentState], dict]:
@@ -48,15 +53,21 @@ def make_collector_node(llm: LLMClient) -> Callable[[AgentState], dict]:
         new_claims: list[Claim] = []
         new_evidences: list[Evidence] = []
         done: list[Subtask] = []
+        cell_claims: dict[tuple[str, str], list[str]] = {}
 
         for t in pending:
-            raw = llm.complete([{"role": "user", "content": _PROMPT.format(question=t.question)}])
-            result = parse_json(raw)
-
+            result = llm.complete_structured(
+                [{"role": "user", "content": f"子任务：{t.question}"}],
+                tool_name="submit_claims",
+                input_schema=_COLLECT_SCHEMA,
+            )
+            claim_ids: list[str] = []
             for c in result.get("claims", []):
                 ev_ids: list[str] = []
                 for url in c.get("evidence_urls", []):
-                    ev = Evidence(id=f"ev-{uuid.uuid4().hex[:8]}", url=url, credibility=0.8)
+                    ev = Evidence(
+                        id=f"ev-{uuid.uuid4().hex[:8]}", url=url, credibility=0.5
+                    )
                     new_evidences.append(ev)
                     ev_ids.append(ev.id)
                 claim = Claim(
@@ -67,31 +78,38 @@ def make_collector_node(llm: LLMClient) -> Callable[[AgentState], dict]:
                     role=AgentRole.COLLECTOR,
                 )
                 new_claims.append(claim)
-                done.append(
-                    t.model_copy(update={"status": TaskStatus.COMPLETED, "output_ref": claim.id})
+                claim_ids.append(claim.id)
+            done.append(
+                t.model_copy(
+                    update={
+                        "status": TaskStatus.COMPLETED,
+                        "output_ref": claim_ids[0] if claim_ids else None,
+                    }
                 )
+            )
+            # 只在产出结论时才标 covered；空结果保持 gap，交给 verify 重派
+            if claim_ids:
+                cell_claims[(t.company, t.dim)] = claim_ids
 
-        # 把已搜集的格子置为 covered（简化：按完成的子任务数量覆盖前 N 个 gap 格子）
-        cells = list(state.get("matrix", None).cells) if state.get("matrix") else []
-        covered = 0
-        updated_cells = []
-        for cell in cells:
-            if cell.status == CellStatus.GAP and covered < len(pending):
-                updated_cells.append(
-                    cell.model_copy(
-                        update={"status": CellStatus.COVERED, "claim_refs": [c.id for c in new_claims[:1]]}
-                    )
-                )
-                covered += 1
-            else:
-                updated_cells.append(cell)
+        # 精确更新：子任务绑定的格子置 covered，关联该格子产出的结论
+        matrix = state["matrix"]
+        updated_cells = [
+            cell.model_copy(
+                update={
+                    "status": CellStatus.COVERED,
+                    "claim_refs": cell_claims.get((cell.company, cell.dim), []),
+                }
+            )
+            if (cell.company, cell.dim) in cell_claims
+            else cell
+            for cell in matrix.cells
+        ]
 
-        matrix = state["matrix"].model_copy(update={"cells": updated_cells})
         return {
             "claims": new_claims,
             "evidences": new_evidences,
             "subtasks": done,
-            "matrix": matrix,
+            "matrix": matrix.model_copy(update={"cells": updated_cells}),
             "stage": StageName.VERIFY,
         }
 

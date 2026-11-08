@@ -1,6 +1,6 @@
 """Lead 角色：规划者（align 阶段）。
 
-生成研究矩阵 + 拆解子任务，写入状态。
+生成研究矩阵 + 拆解子任务，写入状态。结构化输出用 tool use 强制 schema。
 """
 from __future__ import annotations
 
@@ -16,22 +16,29 @@ from ..state.schema import (
     StageName,
     Subtask,
 )
-from . import parse_json
 
-_PROMPT = """你是行业调研的规划者 Lead。给定调研意图，生成研究计划。
-
-调研意图：{intent}
-
-只输出 JSON，不要输出任何其他文字，格式如下：
-{{
-  "companies": ["公司A", "公司B"],
-  "dims": ["市场规模", "竞争格局"],
-  "subtasks": [
-    {{"id": "t1", "question": "该公司市场规模是多少", "dependencies": []}},
-    {{"id": "t2", "question": "竞争格局如何", "dependencies": ["t1"]}}
-  ]
-}}
-"""
+_PLAN_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "companies": {"type": "array", "items": {"type": "string"}},
+        "dims": {"type": "array", "items": {"type": "string"}},
+        "subtasks": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "id": {"type": "string"},
+                    "question": {"type": "string"},
+                    "company": {"type": "string"},
+                    "dim": {"type": "string"},
+                    "dependencies": {"type": "array", "items": {"type": "string"}},
+                },
+                "required": ["id", "question", "company", "dim"],
+            },
+        },
+    },
+    "required": ["companies", "dims", "subtasks"],
+}
 
 
 def make_lead_node(llm: LLMClient) -> Callable[[AgentState], dict]:
@@ -39,8 +46,11 @@ def make_lead_node(llm: LLMClient) -> Callable[[AgentState], dict]:
 
     def node(state: AgentState) -> dict:
         intent = state["intent"]
-        raw = llm.complete([{"role": "user", "content": _PROMPT.format(intent=intent)}])
-        plan = parse_json(raw)
+        plan = llm.complete_structured(
+            [{"role": "user", "content": f"调研意图：{intent}。请生成研究计划。"}],
+            tool_name="submit_plan",
+            input_schema=_PLAN_SCHEMA,
+        )
 
         companies: list[str] = plan["companies"]
         dims: list[str] = plan["dims"]
@@ -55,6 +65,8 @@ def make_lead_node(llm: LLMClient) -> Callable[[AgentState], dict]:
                 question=s["question"],
                 role=AgentRole.COLLECTOR,
                 stage=StageName.COLLECT,
+                company=s["company"],
+                dim=s["dim"],
                 dependencies=s.get("dependencies", []),
             )
             for s in plan["subtasks"]
