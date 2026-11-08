@@ -1,7 +1,7 @@
 <div align="center">
 
 <h1>
-  <img src="docs/assets/logo.svg" width="44" height="44" alt="logo" style="vertical-align: middle;"/> 研小报 · deep research
+  <img src="assets/logo.svg" width="44" height="44" alt="logo" style="vertical-align: middle;"/> 研小报 · deep research
 </h1>
 
 **可验证溯源的行业调研多 Agent 助手**
@@ -17,7 +17,7 @@
 
 <br/>
 
-<img src="docs/assets/screenshot.png" alt="研小报 · deep research 界面预览" width="920"/>
+<img src="assets/screenshot.png" alt="研小报 · deep research 界面预览" width="920"/>
 
 </div>
 
