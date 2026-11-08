@@ -17,7 +17,8 @@
 
 <br/>
 
-<img src="assets/screenshot.png" alt="研小报 · deep research 界面预览" width="920"/>
+<img src="assets/image1.png" alt="搜索框界面" width="920"/>
+<!-- <img src="assets/image2.png" alt="调研界面" width="920"/> -->
 
 </div>
 
@@ -144,17 +145,6 @@ python serve.py
 ```
 research-agent/
 ├── frontend/              # Vite + TypeScript Mock 演示前端
-│   ├── main.ts            # 应用外壳与编排
-│   ├── dialog.ts          # 对话交互 + 多 Agent DAG 流程引擎
-│   ├── stages.ts          # 阶段内容构建（数据驱动）
-│   ├── store.ts           # 会话持久化
-│   ├── views.ts           # HTML 模板层
-│   ├── console.ts         # 用户控制台（调研台账）
-│   ├── compare.ts         # 双行业对比
-│   ├── tasks.ts           # 定时任务
-│   ├── report.ts          # 完整报告渲染
-│   ├── common.ts          # 通用工具
-│   └── mock.ts            # 虚拟数据
 │
 ├── backend/               # Python FastAPI + LangGraph 后端
 │   └── app/
