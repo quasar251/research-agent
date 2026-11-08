@@ -31,8 +31,8 @@ export let activeConv: Conversation | null = null;
 export let todaySpend = 0;
 let convSeq = 0;
 
-const LS_CONVS = 'yanheng.conversations';
-const LS_SPEND = 'yanheng.todaySpend';
+const LS_CONVS = 'deepresearch.conversations';
+const LS_SPEND = 'deepresearch.todaySpend';
 
 /** 侧边栏刷新回调，由应用外壳注册（避免模块间循环依赖） */
 let sidebarRefresh: () => void = () => {};

@@ -7,7 +7,7 @@ from .state.graph import initial_state
 
 
 class ResearchRuntime:
-    """研衡统一运行时。"""
+    """研小报统一运行时。"""
 
     def __init__(self, llm: LLMClient, checkpointer=None) -> None:
         self.graph = build_graph(llm, checkpointer)

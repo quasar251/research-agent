@@ -31,7 +31,7 @@ def _upsert_by_id(current: list, update: list) -> list:
 
 
 class AgentState(TypedDict, total=False):
-    """研衡的图状态：LangGraph 每个节点读写该状态的字段。
+    """研小报的图状态：LangGraph 每个节点读写该状态的字段。
 
     `total=False` 使所有字段可选，节点可只返回被更新的字段。
     """

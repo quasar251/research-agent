@@ -30,8 +30,8 @@ export const state = {
 };
 
 export const MODEL_LABEL: Record<string, string> = {
-  pro: '研衡 Pro',
-  turbo: '研衡 Turbo',
+  pro: '研小报 Pro',
+  turbo: '研小报 Turbo',
   claude: 'Claude',
   gpt: 'GPT-4o',
 };

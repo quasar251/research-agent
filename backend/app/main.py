@@ -10,7 +10,7 @@ from .runtime import ResearchRuntime
 
 def create_app(llm) -> FastAPI:
     """创建 FastAPI 应用，注入 runtime。"""
-    app = FastAPI(title="研衡 · 行业调研助手")
+    app = FastAPI(title="研小报 · deep research")
     app.state.runtime = ResearchRuntime(llm)
     # SSE 精确路径须先于 /research/{run_id} 注册，避免 stream 被当成 run_id
     app.include_router(sse_router)

@@ -204,7 +204,7 @@ export function buildStages(r: Report, depth: ReportDepth): StageDef[] {
     }],
     result: `<div class="doc-h2" style="margin-top:20px;">综合洞察与建议</div>
       <div class="doc-text" style="background-color:var(--bg-elev);padding:16px;border-radius:12px;border-left:3px solid var(--dag-primary);">
-        <strong>研衡协同结论：</strong>${esc(insight)}
+        <strong>研小报协同结论：</strong>${esc(insight)}
       </div>
       <div class="mini-list">${r.citations.map((c, i) =>
         miniItem(`<strong>[${i + 1}]</strong> ${esc(c.title)} <span class="strength strength-${c.strength}">${STRENGTH_LABEL[c.strength]}</span> · ${esc(c.source)}`)
@@ -289,7 +289,7 @@ function buildSimpleStages(r: Report): StageDef[] {
     ],
     result: `<div class="doc-h2" style="margin-top:20px;">核心结论</div>
       <div class="doc-text" style="background-color:var(--bg-elev);padding:16px;border-radius:12px;border-left:3px solid var(--dag-primary);">
-        <strong>研衡速览结论：</strong>${esc(insight)}
+        <strong>研小报速览结论：</strong>${esc(insight)}
       </div>
       <div class="mini-list">${r.citations
         .slice(0, 2)

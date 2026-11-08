@@ -178,7 +178,7 @@ export function fullReportHtml(r: Report, depth: ReportDepth): string {
   return `
     <div class="report">
       <div class="report-head">
-        <div class="report-kicker">YANHENG RESEARCH · ${esc(r.domain)} · ${depthLabel}报告</div>
+        <div class="report-kicker">deep research · ${esc(r.domain)} · ${depthLabel}报告</div>
         <h2 class="report-title">${esc(r.topic)}深度洞察</h2>
         <div class="report-meta">
           ${r.tags.map((t) => `<span class="tag">${esc(t)}</span>`).join('')}

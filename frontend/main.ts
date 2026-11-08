@@ -38,8 +38,8 @@ import { openCompare } from './compare';
 
 const app = document.querySelector<HTMLDivElement>('#app')!;
 
-const LS_THEME = 'yanheng.theme';
-const LS_SIDEBAR = 'yanheng.sidebar';
+const LS_THEME = 'deepresearch.theme';
+const LS_SIDEBAR = 'deepresearch.sidebar';
 
 let currentTheme: 'dark' | 'light' = 'dark';
 let sidebarPinned = localStorage.getItem(LS_SIDEBAR) !== 'hidden';
@@ -104,10 +104,20 @@ function shell(): string {
     <div class="app sidebar-pinned">
       <aside class="sidebar">
         <div class="brand">
-          <div class="brand-mark">研</div>
+          <div class="brand-mark" aria-label="研小报">
+            <svg class="brand-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="M3.5 6.5h7" />
+              <path d="M4.5 6.5 3.5 11.5" />
+              <rect x="4.5" y="11.5" width="5.5" height="5" rx="0.6" />
+              <path d="M14 4.5h7" />
+              <path d="M14 11.5h7" />
+              <path d="M16 4.5 14.5 18.5" />
+              <path d="M20 4.5v14" />
+            </svg>
+          </div>
           <div class="brand-text">
-            <div class="brand-name">研衡</div>
-            <div class="brand-sub">YANHENG · 行业调研助手</div>
+            <div class="brand-name">研小报</div>
+            <div class="brand-sub">deep research · 行业调研助手</div>
           </div>
         </div>
         <div class="demo-badge">DEMO · 虚拟数据</div>
@@ -162,8 +172,8 @@ function shell(): string {
               <span class="divider"></span>
               <div class="model-select-wrapper">
                 <select class="model-select" id="modelSelect" title="选择模型">
-                  <option value="pro">研衡 Pro</option>
-                  <option value="turbo">研衡 Turbo</option>
+                  <option value="pro">研小报 Pro</option>
+                  <option value="turbo">研小报 Turbo</option>
                   <option value="claude">Claude</option>
                   <option value="gpt">GPT-4o</option>
                 </select>

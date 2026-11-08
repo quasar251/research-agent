@@ -30,7 +30,7 @@ export function welcomeHtml(suggestions: string[]): string {
   return `
     <div class="welcome" id="welcome">
       <div class="welcome-kicker">INDUSTRY INTELLIGENCE</div>
-      <h1 class="welcome-title">想了解哪个行业？把问题交给<em>研衡</em>。</h1>
+      <h1 class="welcome-title">想了解哪个行业？把问题交给<em>研小报</em>。</h1>
       <p class="welcome-sub">选「简单 / 深度」，输入主题即可生成报告，过程中可随时确认或提出修改意见。</p>
       <div class="welcome-actions">${chips}</div>
     </div>`;
@@ -90,8 +90,8 @@ export function ensureFollowDock(): HTMLElement {
           <label class="follow-model" title="选择追问模型">
             <span class="model-select-wrapper">
               <select class="model-select follow-model-select" id="followModelSelect" title="选择追问模型" aria-label="选择追问模型">
-                <option value="pro">研衡 Pro</option>
-                <option value="turbo">研衡 Turbo</option>
+                <option value="pro">研小报 Pro</option>
+                <option value="turbo">研小报 Turbo</option>
                 <option value="claude">Claude</option>
                 <option value="gpt">GPT-4o</option>
               </select>
@@ -136,7 +136,7 @@ export function followAgentHtml(
       <div class="msg-head">
         <div class="avatar">研</div>
         <div class="agent-meta">
-          <div class="agent-name">研衡 Agent</div>
+          <div class="agent-name">研小报 Agent</div>
           <div class="agent-domain">${esc(label)}</div>
         </div>
       </div>

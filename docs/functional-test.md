@@ -1,6 +1,6 @@
 # 核心流程功能测试 Functional Test
 
-> 本文定义研衡**核心主线**的功能测试规格，覆盖 `agent-core.md` §6 的运行时视图（align → collect → verify → synthesize）。
+> 本文定义研小报**核心主线**的功能测试规格，覆盖 `agent-core.md` §6 的运行时视图（align → collect → verify → synthesize）。
 > 目标是验证 State 状态机 + Orchestration 派发/缺口的正确性，不含对扩展模块（Context/Memory/Skill/Tool/Security）的深度测试。
 
 ---

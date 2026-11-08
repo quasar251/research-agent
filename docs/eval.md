@@ -1,6 +1,6 @@
 # 调研质量评估 Eval
 
-> 本文定义研衡调研产出的质量评估方案。无直接对应的设计真源章节，参照业界 Deep Research Agent 评估方法论（DeepResearch Bench 的 RACE + FACT、SAFE、DREAM），并与研衡自身的状态结构对齐。
+> 本文定义研小报调研产出的质量评估方案。无直接对应的设计真源章节，参照业界 Deep Research Agent 评估方法论（DeepResearch Bench 的 RACE + FACT、SAFE、DREAM），并与研小报自身的状态结构对齐。
 
 ---
 
@@ -18,7 +18,7 @@
 | --- | --- | --- |
 | 报告质量 | RACE（report quality） | 报告写得全不全、有没有洞察 |
 | 事实与引用 | FACT（citation + factuality） | 结论靠不靠谱、引用真不真 |
-| 过程质量 | 研衡特有（覆盖度 / 溯源） | 过程能不能追溯 |
+| 过程质量 | 研小报特有（覆盖度 / 溯源） | 过程能不能追溯 |
 
 ---
 
@@ -42,7 +42,7 @@
   - 事实准确性：结论与来源事实一致，无"有引用但未验证"的情况
 - **claim 级事实核查**（SAFE 式）：把结论拆成原子 claim，逐条判定 supported / unsupported / contradicted。
 
-### 3.3 过程质量（研衡特有）
+### 3.3 过程质量（研小报特有）
 
 与状态结构直接映射：
 

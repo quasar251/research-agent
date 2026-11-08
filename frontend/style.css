@@ -189,12 +189,15 @@ button {
   display: grid;
   place-items: center;
   background: var(--accent);
-  color: #191410;
-  font-family: var(--serif);
-  font-weight: 900;
-  font-size: 20px;
+  color: #ffffff;
   border-radius: 6px 6px 6px 2px;
   box-shadow: 0 6px 18px rgba(234, 91, 52, 0.28);
+}
+
+.brand-icon {
+  width: 22px;
+  height: 22px;
+  display: block;
 }
 
 .brand-name {
@@ -2196,7 +2199,7 @@ button {
   left: auto;
   bottom: auto;
   transform: none;
-  width: min(760px, calc(100% - 60px));
+  width: min(900px, calc(100% - 60px));
   margin: 32px auto 0;
   padding: 0;
   border-top: none;
@@ -2221,7 +2224,7 @@ button {
   border: 1px solid var(--field-line);
   border-radius: 8px;
   height: 32px;
-  width: 108px;
+  width: 128px;
   padding: 0 28px 0 12px;
   outline: none;
   cursor: pointer;
