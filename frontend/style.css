@@ -3845,3 +3845,90 @@ button {
   color: var(--ink-dim, #5a6472);
   white-space: pre-wrap;
 }
+
+/* ---------------- HITL 审批面板（深度调研 · align 暂停点） ---------------- */
+.approval-area {
+  margin: 8px 0 18px;
+  padding: 18px 20px;
+  border: 1px solid var(--gold, #d8a24a);
+  border-left: 3px solid var(--gold, #d8a24a);
+  border-radius: 10px;
+  background: var(--bg-elev);
+}
+.approval-area.hidden {
+  display: none;
+}
+.approval-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+.approval-badge {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
+  color: var(--gold);
+  border: 1px solid var(--gold);
+  border-radius: 5px;
+  padding: 3px 7px;
+}
+.approval-title {
+  font-family: var(--serif);
+  font-size: 15px;
+  font-weight: 700;
+}
+.approval-desc {
+  font-size: 12.5px;
+  line-height: 1.7;
+  color: var(--ink-dim);
+  margin-bottom: 12px;
+}
+.approval-row {
+  margin-bottom: 12px;
+}
+.approval-area .approval-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 9px 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  font-size: 13px;
+  outline: none;
+  background: var(--bg, #fff);
+  color: var(--ink, #222);
+}
+.approval-area .approval-input:focus {
+  border-color: var(--accent);
+}
+.approval-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+.approval-actions button {
+  padding: 8px 16px;
+  border-radius: 8px;
+  font-size: 13px;
+  cursor: pointer;
+}
+.approval-actions button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.approval-retry {
+  border: 1px solid var(--line-strong);
+  background: transparent;
+  color: var(--ink-dim);
+}
+.approval-confirm {
+  border: none;
+  background: var(--accent, #e2653f);
+  color: #fff;
+}
+.approval-status {
+  margin-top: 10px;
+  font-size: 12px;
+  color: var(--ink-dim);
+  min-height: 16px;
+}

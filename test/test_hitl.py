@@ -54,3 +54,34 @@ def test_simple_mode_no_interrupt():
     result = graph.invoke(initial_state("r1", "u1", "调研", depth="simple"), config)
     assert "__interrupt__" not in result
     assert result["report"].summary == "最终摘要"
+
+
+def test_retry_feedback_reaches_lead_prompt():
+    """打回意见必须进入下一轮规划 prompt，否则「打回重写」只是空转。"""
+    class RecordingLLM(MockLLM):
+        def __init__(self) -> None:
+            self.plan_prompts: list[str] = []
+
+        def complete_structured(self, messages, tool_name, input_schema, max_tokens=1024) -> dict:
+            if tool_name == "submit_plan":
+                self.plan_prompts.append(messages[-1]["content"])
+            return super().complete_structured(messages, tool_name, input_schema, max_tokens)
+
+    llm = RecordingLLM()
+    graph = build_graph(llm, checkpointer=create_checkpointer(":memory:"))
+    config = {"configurable": {"thread_id": "hitl-feedback"}}
+
+    result = graph.invoke(initial_state("r1", "u1", "调研", depth="deep"), config)
+    assert "__interrupt__" in result
+    assert len(llm.plan_prompts) == 1
+
+    # retry 带人工意见：Lead 应据此重新规划，并再次停在审批点
+    result = graph.invoke(
+        Command(resume={"action": "retry", "feedback": "增加海外市场分析"}), config
+    )
+    assert "__interrupt__" in result
+    assert "增加海外市场分析" in llm.plan_prompts[-1]
+
+    # 再次确认后跑完
+    result = graph.invoke(Command(resume="confirm"), config)
+    assert result["report"].summary == "最终摘要"

@@ -114,7 +114,9 @@ async def research_action(run_id: str, req: ActionRequest, request: Request):
     if decision not in {"confirm", "retry"}:
         raise HTTPException(status_code=400, detail="INVALID_PARAM")
 
-    result = await asyncio.to_thread(request.app.state.runtime.resume, run_id, decision)
+    result = await asyncio.to_thread(
+        lambda: request.app.state.runtime.resume(run_id, decision, feedback=req.feedback)
+    )
     if result.get("__interrupt__"):
         store.update(run_id, "waiting_approval")
     else:

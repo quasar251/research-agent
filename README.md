@@ -193,6 +193,8 @@ pytest
 
 后端 LLM 层通过 `LLMClient` 协议抽象，测试时注入 Mock，**无需真实 API Key**。
 
+uv run python backend/serve.py
+npm run dev
 ---
 
 <div align="center">

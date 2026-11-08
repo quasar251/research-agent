@@ -95,10 +95,17 @@ class ResearchRuntime:
         decision: str,
         thread_id: str | None = None,
         on_node: "callable | None" = None,
+        feedback: str = "",
     ) -> dict:
-        """HITL 恢复：confirm 继续执行，retry 打回重新规划（api.md §3.4）。"""
+        """HITL 恢复：confirm 继续执行，retry 打回重新规划（api.md §3.4）。
+
+        feedback 随 resume 值一起交给 align 节点，作为打回后的重规划依据。
+        """
         config = {"configurable": {"thread_id": thread_id or run_id}}
-        final = self._stream(Command(resume=decision), config, run_id, on_node)
+        resume_value: dict | str = (
+            {"action": decision, "feedback": feedback} if feedback else decision
+        )
+        final = self._stream(Command(resume=resume_value), config, run_id, on_node)
         if final.get("__interrupt__"):
             self.audit_log.record("等待审批", run_id, {"checkpoint": "align"})
             return final

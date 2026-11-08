@@ -1,6 +1,14 @@
 import { state, setDepthLocked, setDepthUI, setStatus } from './common';
 import { backendReportHtml } from './report';
-import { newRunId, subscribeEvents, getResearch, followResearch } from './api';
+import type { ReportDepth } from './mock';
+import {
+  newRunId,
+  subscribeEvents,
+  getResearch,
+  followResearch,
+  submitAction,
+  type ResearchStatus,
+} from './api';
 import {
   refreshSidebar,
   setActiveConv,
@@ -96,6 +104,43 @@ const STAGE_LABEL: Record<string, string> = {
   synthesize: '生成报告中...',
 };
 
+/** 把后端任务状态渲染到真实调研卡片（completed / waiting_approval / failed 统一处理） */
+function renderResearchState(
+  card: HTMLElement,
+  st: ResearchStatus,
+  convId: string,
+  depth: ReportDepth,
+): void {
+  const reportEl = card.querySelector<HTMLElement>('.real-report');
+  const statusEl = card.querySelector<HTMLElement>('.real-status');
+  const approvalEl = card.querySelector<HTMLElement>('.approval-area');
+  const followEl = card.querySelector<HTMLElement>('.follow-area');
+
+  if (st.status === 'waiting_approval') {
+    if (statusEl) statusEl.textContent = '等待你确认研究计划...';
+    approvalEl?.classList.remove('hidden');
+    followEl?.classList.add('hidden');
+    setStatus('等待审批', 'busy');
+    return;
+  }
+
+  if (st.report && reportEl) {
+    setConvReport(convId, st.report);
+    reportEl.innerHTML = backendReportHtml(st.report, depth);
+    // 卡片进度文案与顶部状态同步，避免「已完成」却仍显示「生成报告中...」
+    if (statusEl) statusEl.textContent = '报告已生成';
+    approvalEl?.classList.add('hidden');
+    followEl?.classList.remove('hidden');
+    setStatus('已完成', 'ok');
+    return;
+  }
+
+  if (statusEl) statusEl.textContent = '调研未完成';
+  if (reportEl) reportEl.innerHTML = '<div class="doc-text">调研失败，请稍后重试。</div>';
+  approvalEl?.classList.add('hidden');
+  setStatus('调研失败', 'idle');
+}
+
 export function sendMessage(text: string): void {
   const query = text.trim();
   if (!query) return;
@@ -111,6 +156,7 @@ export function sendMessage(text: string): void {
   const chat = document.getElementById('chat')!;
   chat.insertAdjacentHTML('beforeend', realCardHtml(runId, query, depth));
   const card = chat.querySelector<HTMLElement>(`[data-real-card="${runId}"]`)!;
+  card.dataset.convId = conv.id;
 
   setDepthLocked(true);
   hideFollowDock();
@@ -126,19 +172,10 @@ export function sendMessage(text: string): void {
       if (el) el.textContent = STAGE_LABEL[node] ?? node;
     },
     async () => {
-      const reportEl = card.querySelector<HTMLElement>('.real-report');
       try {
-        const st = await getResearch(runId);
-        if (st.report && reportEl) {
-          setConvReport(conv.id, st.report);
-          reportEl.innerHTML = backendReportHtml(st.report, depth);
-          setStatus('已完成', 'ok');
-          card.querySelector<HTMLElement>('.follow-area')?.classList.remove('hidden');
-        } else {
-          setStatus('调研失败', 'idle');
-          if (reportEl) reportEl.innerHTML = '<div class="doc-text">调研失败，请稍后重试。</div>';
-        }
+        renderResearchState(card, await getResearch(runId), conv.id, depth);
       } catch {
+        const reportEl = card.querySelector<HTMLElement>('.real-report');
         setStatus('调研失败', 'idle');
         if (reportEl) reportEl.innerHTML = '<div class="doc-text">调研失败，请稍后重试。</div>';
       }
@@ -161,27 +198,21 @@ export function replayConversation(conv: Conversation): void {
   // 渲染真实后端报告（有缓存直接用，无缓存从后端拉取）
   chat.insertAdjacentHTML('beforeend', realCardHtml(conv.runId, conv.title, conv.depth));
   const card = chat.querySelector<HTMLElement>(`[data-real-card="${conv.runId}"]`)!;
-  const reportEl = card.querySelector<HTMLElement>('.real-report')!;
+  card.dataset.convId = conv.id;
 
   if (conv.report) {
-    reportEl.innerHTML = backendReportHtml(conv.report, conv.depth);
-    setStatus('已完成', 'ok');
-    card.querySelector<HTMLElement>('.follow-area')?.classList.remove('hidden');
+    renderResearchState(
+      card,
+      { run_id: conv.runId, status: 'completed', report: conv.report },
+      conv.id,
+      conv.depth,
+    );
   } else {
     getResearch(conv.runId)
-      .then((st) => {
-        if (st.report) {
-          setConvReport(conv.id, st.report);
-          reportEl.innerHTML = backendReportHtml(st.report, conv.depth);
-          setStatus('已完成', 'ok');
-          card.querySelector<HTMLElement>('.follow-area')?.classList.remove('hidden');
-        } else {
-          reportEl.innerHTML = '<div class="doc-text">报告不可用，请重新发起调研。</div>';
-          setStatus('调研失败', 'idle');
-        }
-      })
+      .then((st) => renderResearchState(card, st, conv.id, conv.depth))
       .catch(() => {
-        reportEl.innerHTML = '<div class="doc-text">报告不可用，请重新发起调研。</div>';
+        const reportEl = card.querySelector<HTMLElement>('.real-report');
+        if (reportEl) reportEl.innerHTML = '<div class="doc-text">报告不可用，请重新发起调研。</div>';
         setStatus('调研失败', 'idle');
       });
   }
@@ -202,6 +233,44 @@ export function bindChatEvents(): void {
       sendMessage(chip.dataset.query ?? '');
       return;
     }
+    const approvalBtn = target.closest<HTMLElement>('[data-approval-act]');
+    if (approvalBtn) {
+      const card = approvalBtn.closest<HTMLElement>('.research-card');
+      if (!card) return;
+      const runId = card.dataset.realCard ?? '';
+      const actions = card.querySelectorAll<HTMLButtonElement>('[data-approval-act]');
+      const note = card.querySelector<HTMLElement>('.approval-status');
+      const action = approvalBtn.dataset.approvalAct === 'retry' ? 'retry' : 'confirm';
+      const feedback = card.querySelector<HTMLInputElement>('.approval-input')?.value.trim() ?? '';
+      if (!runId) return;
+
+      actions.forEach((b) => (b.disabled = true));
+      if (note) note.textContent = action === 'retry' ? '已打回，正在重新规划...' : '已确认，继续调研中...';
+      const statusEl = card.querySelector<HTMLElement>('.real-status');
+      if (statusEl) statusEl.textContent = action === 'retry' ? '按意见重新规划中...' : '继续调研中...';
+      setStatus('调研中…', 'busy');
+
+      submitAction(runId, action, feedback)
+        .then(() => getResearch(runId))
+        .then((st) => {
+          renderResearchState(
+            card,
+            st,
+            card.dataset.convId ?? '',
+            card.dataset.depth === 'deep' ? 'deep' : 'simple',
+          );
+          if (st.status === 'waiting_approval' && note) {
+            note.textContent = '已按你的意见重新生成计划，请再次确认。';
+          }
+        })
+        .catch(() => {
+          if (note) note.textContent = '提交失败，请重试。';
+          setStatus('等待审批', 'busy');
+        })
+        .finally(() => actions.forEach((b) => (b.disabled = false)));
+      return;
+    }
+
     const followBtn = target.closest<HTMLElement>('.follow-btn');
     if (followBtn) {
       const runId = followBtn.dataset.followRun ?? '';

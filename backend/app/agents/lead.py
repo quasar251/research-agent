@@ -111,13 +111,20 @@ def make_lead_node(
         intent = view["intent"]
         system_prompt = build_system_prompt(_LEAD_BASE, skill_registry, StageName.ALIGN)
         hitl = state.get("depth") == "deep"
+        retry_feedback = ""
 
         while True:
+            user_content = f"调研意图：{intent}\n\n请按约束输出研究计划。"
+            if retry_feedback:
+                user_content += (
+                    "\n\n# 人工打回意见\n"
+                    f"上一版研究计划被打回，请据此调整研究范围与子任务：{retry_feedback}"
+                )
             try:
                 plan = llm.complete_structured(
                     [
                         {"role": "system", "content": system_prompt},
-                        {"role": "user", "content": f"调研意图：{intent}\n\n请按约束输出研究计划。"},
+                        {"role": "user", "content": user_content},
                     ],
                     tool_name="submit_plan",
                     input_schema=_PLAN_SCHEMA,
@@ -146,9 +153,16 @@ def make_lead_node(
                     "subtask_count": len(subtasks),
                 }
             )
-            if decision == "confirm":
+            # resume 值兼容两种：纯字符串（直接调 graph 的测试）/ 带 feedback 的 dict（API）
+            if isinstance(decision, dict):
+                action = decision.get("action", "confirm")
+                retry_feedback = str(decision.get("feedback", "")).strip()
+            else:
+                action = decision
+                retry_feedback = ""
+            if action == "confirm":
                 break
-            # retry：继续循环，重新规划
+            # retry：带上人工意见继续循环，重新规划
 
         return {
             "matrix": matrix,

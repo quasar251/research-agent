@@ -87,6 +87,21 @@ export async function getResearch(run_id: string): Promise<ResearchStatus> {
   return resp.json();
 }
 
+/** HITL 审批：confirm 继续，retry 打回重新规划（api.md §3.4） */
+export async function submitAction(
+  run_id: string,
+  action: 'confirm' | 'retry',
+  feedback = '',
+): Promise<{ run_id: string; status: string }> {
+  const resp = await fetch(`${BASE}/research/${run_id}/action`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action, feedback }),
+  });
+  if (!resp.ok) throw new Error(`action failed: ${resp.status}`);
+  return resp.json();
+}
+
 /** 基于已产出报告追问（复用调研结论，不重新检索） */
 export async function followResearch(run_id: string, question: string): Promise<{ answer: string }> {
   const resp = await fetch(`${BASE}/research/${run_id}/follow`, {
