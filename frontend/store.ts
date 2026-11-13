@@ -1,5 +1,4 @@
-import type { ReportDepth } from './mock';
-import type { BackendReport } from './api';
+import { reports, type Report, type ReportDepth } from './mock';
 import { fmtTime, usageFor } from './common';
 
 /* ================================================================
@@ -17,14 +16,12 @@ export type ChatMessage =
 
 export interface Conversation {
   id: string;
-  runId: string;
-  reportId: string;  // 兼容旧数据（等于 runId）
+  reportId: string;
   title: string;
   domain: string;
   time: string;
   depth: ReportDepth;
   cost: number;
-  report?: BackendReport;  // 后端报告缓存（回放用）
   messages: ChatMessage[];
 }
 
@@ -119,22 +116,36 @@ export function loadConvs(): boolean {
 }
 
 export function seedConvs(): void {
-  // 后端数据源，不再种子 Mock 会话
-  conversations = [];
-  todaySpend = 0;
+  const seeds: { reportId: string; time: string; depth: ReportDepth }[] = [
+    { reportId: 'ai-agent', time: '今天 14:20', depth: 'deep' },
+    { reportId: 'humanoid', time: '昨天 09:41', depth: 'deep' },
+    { reportId: 'perovskite', time: '11-04 16:05', depth: 'simple' },
+  ];
+  conversations = seeds.map((s) => {
+    const r = reports[s.reportId];
+    return {
+      id: `c${++convSeq}`,
+      reportId: s.reportId,
+      title: r.topic,
+      domain: r.domain,
+      time: s.time,
+      depth: s.depth,
+      cost: usageFor(s.depth).cost,
+      messages: [],
+    };
+  });
+  todaySpend = conversations.reduce((sum, c) => sum + c.cost, 0);
   saveConvs();
 }
 
-/** 记录一次真实后端调研（sendMessage 用） */
-export function recordBackendConversation(query: string, depth: ReportDepth, runId: string): Conversation {
+export function recordConversation(report: Report, depth: ReportDepth): Conversation {
   const cost = usageFor(depth).cost;
   const id = `c${++convSeq}`;
   const conv: Conversation = {
     id,
-    runId,
-    reportId: runId,
-    title: query,
-    domain: query,
+    reportId: report.id,
+    title: report.topic,
+    domain: report.domain,
     time: fmtTime(new Date()),
     depth,
     cost,
@@ -147,17 +158,6 @@ export function recordBackendConversation(query: string, depth: ReportDepth, run
   saveConvs();
   sidebarRefresh();
   return conv;
-}
-
-/** 调研完成后回写报告缓存（回放用） */
-export function setConvReport(convId: string, report: BackendReport): void {
-  const conv = conversations.find((c) => c.id === convId);
-  if (conv) {
-    conv.report = report;
-    conv.title = report.topic || conv.title;
-    saveConvs();
-    sidebarRefresh();
-  }
 }
 
 export function deleteConversation(id: string): void {

@@ -127,7 +127,9 @@ def _parse_sections(raw_sections: list) -> list[ReportSection]:
 
 
 def make_synthesizer_node(
-    llm: LLMClient, skill_registry: SkillRegistry | None = None
+    llm: LLMClient,
+    skill_registry: SkillRegistry | None = None,
+    core_memory: str = "",
 ) -> Callable[[AgentState], dict]:
     """返回 synthesize 阶段的节点函数。摘要规范与报告结构由 Skill 随阶段注入。"""
 
@@ -143,7 +145,7 @@ def make_synthesizer_node(
         if should_compress(claims_text, _BUDGET):
             claims_text = compress(claims_text, _BUDGET, [c.id for c in claims])
         system_prompt = build_system_prompt(
-            _SYNTHESIZER_BASE, skill_registry, StageName.SYNTHESIZE
+            _SYNTHESIZER_BASE, skill_registry, StageName.SYNTHESIZE, core_memory=core_memory
         )
         try:
             result = llm.complete_structured(
@@ -164,11 +166,14 @@ def make_synthesizer_node(
             summary = result.get("summary", "")
             sections = _parse_sections(result.get("sections", []))
             errors: list[str] = []
+            partial = False
         except LLMError as exc:
             # 失败兜底：摘要降级为空，报告仍由台账（takeaways/citations）派生，不崩溃
+            # reliability.md §2 降级：返回带 partial=true 的部分结果并显式标注未完成
             summary = ""
             sections = []
             errors = [f"报告摘要生成失败：{exc}"]
+            partial = True
 
         # 从状态组装结构化报告：summary 由 LLM 产出，其余由台账派生
         evidences = state.get("evidences", [])
@@ -189,6 +194,7 @@ def make_synthesizer_node(
             citations=citations,
             sections=sections,
             coverage=state["matrix"].coverage,
+            partial=partial,
         )
         return {
             "report": report,

@@ -33,7 +33,9 @@ _VERIFIER_BASE = """你是一名行业调研的「核查员」，负责对已搜
 
 
 def make_verifier_node(
-    llm: LLMClient, skill_registry: SkillRegistry | None = None
+    llm: LLMClient,
+    skill_registry: SkillRegistry | None = None,
+    core_memory: str = "",
 ) -> Callable[[AgentState], dict]:
     """返回 verify 阶段的节点函数。证据分级规则由 Skill 随阶段注入。"""
 
@@ -41,7 +43,9 @@ def make_verifier_node(
         # 按角色编译上下文视图，只核查 draft 结论；非 draft 由 reducer 按 id 合并保留
         view, snapshot = compile_context(AgentRole.VERIFIER, state)
         ev_index = {e.id: e for e in state.get("evidences", [])}
-        system_prompt = build_system_prompt(_VERIFIER_BASE, skill_registry, StageName.VERIFY)
+        system_prompt = build_system_prompt(
+            _VERIFIER_BASE, skill_registry, StageName.VERIFY, core_memory=core_memory
+        )
         verified: list[Claim] = []
         errors: list[str] = []
         for c in view["draft_claims"]:

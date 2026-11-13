@@ -1,0 +1,183 @@
+顶层规则总数: 594
+======================================================================
+【A】同一选择器在顶层被定义多次（最后生效，前面那次通常可删）
+======================================================================
+
+[2x] .research-card
+  #1: display: flex;flex-direction: column;gap: 14px;margin: 0 auto 30px;max-width: 1100px;transition: max-width 0.6s cubic-bezier(0.16, 1, 0.3, 1)
+  #2: --agent-a: #8b6fae;--agent-c: var(--gold);--agent-m: var(--accent);--agent-s: #5c8fb3;--dag-primary: var(--accent);--dag-success: var(--success);--dag-warning: var(--gold)
+
+======================================================================
+【B】不同选择器却使用了完全相同的属性块（可合并选择器或抽公共类）
+======================================================================
+
+[4x] 声明块: background: var(--accent-soft);border-color: var(--accent);color: var(--ink)
+    .sidebar-toggle:hover
+    .compare-btn:hover
+    .theme-btn:hover
+    .follow-chip:hover
+
+[4x] 声明块: color: var(--ink-dim)
+    .history-label .count
+    .step.done .step-label
+    .depth-opt:not(.active):hover
+    .task-depth
+
+[2x] 声明块: display: flex;flex-direction: column;gap: 6px;margin-top: 12px
+    .history-list
+    .task-list
+
+[2x] 声明块: background: transparent
+    .main::-webkit-scrollbar-track
+    .main-card .document-area::-webkit-scrollbar-track
+
+[2x] 声明块: background: var(--line-strong);border-radius: 8px
+    .main::-webkit-scrollbar-thumb
+    .chat::-webkit-scrollbar-thumb,
+.history::-webkit-scrollbar-thumb
+
+[2x] 声明块: background: var(--green)
+    .status[data-state='ok'] .status-dot
+    .pipe-node.done + .pipe-edge
+
+[7x] 声明块: border-color: var(--accent);color: var(--ink)
+    .ma-btn:hover
+    .edit-cancel:hover
+    .close-btn:hover
+    .back-btn:hover
+    .btn-retry:hover
+    .btn-outline:hover
+    .console-back:hover
+
+[3x] 声明块: color: var(--ink)
+    .step-item.completed .step-name
+    .pipe-node.running .pipe-name
+    .research-card .stepper-item.completed .stepper-label
+
+[3x] 声明块: display: flex;flex-direction: column;gap: 10px
+    .stages
+    .matrix
+    .skeleton-group
+
+[3x] 声明块: align-items: center;display: flex;gap: 10px
+    .stage-head
+    .coverage
+    .research-card .work-head
+
+[4x] 声明块: border: 1px solid rgba(139, 163, 111, 0.5);color: var(--green)
+    .role-collector
+    .level-1
+    .strength-solid
+    .risk-l-low,
+.risk-i-low
+
+[2x] 声明块: border: 1px solid rgba(125, 158, 194, 0.5);color: #7d9ec2
+    .role-verifier
+    .strength-inferred
+
+[4x] 声明块: border: 1px solid rgba(234, 91, 52, 0.5);color: var(--accent)
+    .role-synthesizer
+    .level-3
+    .strength-divided
+    .risk-l-high,
+.risk-i-high
+
+[2x] 声明块: color: var(--ink-faint);font-family: var(--mono);font-size: 10.5px;margin-left: auto
+    .task-timer
+    .updated
+
+[2x] 声明块: border-color: var(--gold);opacity: 1
+    .stage.running
+    .worker.running
+
+[4x] 声明块: color: var(--gold)
+    .running .task-timer
+    .swot-o .swot-cell-title
+    .step-item.waiting .step-name,
+.step-item.waiting .step-status-text
+    .ca-status.running
+
+[3x] 声明块: color: var(--green)
+    .done .task-timer
+    .swot-s .swot-cell-title
+    .research-card .swot-s .swot-title
+
+[3x] 声明块: margin-top: 12px
+    .stage-body
+    .prose p + p
+    .doc-text p + p
+
+[3x] 声明块: border: 1px solid rgba(201, 162, 39, 0.5);color: var(--gold)
+    .level-2
+    .strength-consensus
+    .risk-l-mid,
+.risk-i-mid
+
+[2x] 声明块: align-items: center;display: flex;gap: 8px
+    .worker-head
+    .risk-metric
+
+[2x] 声明块: font-size: 13px;font-weight: 700
+    .worker-name
+    .research-card .swot-title
+
+[2x] 声明块: color: var(--gold);font-family: var(--mono);font-size: 11px;letter-spacing: 0.16em;margin-bottom: 14px
+    .takeaways-title
+    .follow-title
+
+[2x] 声明块: color: var(--ink-dim);font-size: 14px;line-height: 1.9
+    .prose p
+    .doc-text
+
+[3x] 声明块: color: var(--accent)
+    .swot-w .swot-cell-title
+    .task-del:hover
+    .research-card .swot-w .swot-title
+
+[5x] 声明块: color: var(--ink-faint)
+    .citations .src-meta
+    .search-input::placeholder
+    .follow-input::placeholder
+    .interaction-input::placeholder
+    .research-card .swot-t .swot-title
+
+[4x] 声明块: border-color: var(--accent);color: var(--accent)
+    .deepdive-btn:hover
+    .add-task:hover
+    .clear-convs:hover
+    .console-nav:hover
+
+[2x] 声明块: display: flex;gap: 10px
+    .follow-row
+    .interaction-input-group
+
+[3x] 声明块: border-color: var(--accent)
+    .follow-input:focus
+    .compare-controls select:focus
+    .field select:focus,
+.field input:focus
+
+[3x] 声明块: filter: brightness(1.08)
+    .follow-send:hover
+    .modal-submit:hover
+    .btn-confirm:hover
+
+[2x] 声明块: color: var(--success)
+    .header-tag.success
+    .ca-status.done
+
+[2x] 声明块: color: var(--ink-faint);font-family: var(--mono);font-size: 12px
+    .doc-pending
+    .research-card .work-elapsed
+
+[2x] 声明块: color: var(--dag-primary);font-weight: 600
+    .research-card .stepper-item.active .stepper-label
+    .research-card .wf-node.active .wf-status
+
+[2x] 声明块: color: var(--dag-warning);font-weight: 600
+    .research-card .stepper-item.waiting .stepper-label
+    .research-card .wf-node.waiting .wf-status
+
+[2x] 声明块: border-bottom: none
+    .cd-row:last-of-type
+    .ca-row:last-child

@@ -24,11 +24,16 @@ class ChatMessage(TypedDict):
 
 
 class LLMError(Exception):
-    """LLM 调用错误，带可重试标记（reliability.md §1）。"""
+    """LLM 调用错误，带可重试标记与业务码（reliability.md §1 / api.md §4）。
 
-    def __init__(self, message: str, retryable: bool) -> None:
+    code 取值：auth（401）/ rate_limited（429）/ circuit_open（503）/ invalid_param（400）
+    / internal（500），供 API 层映射 HTTP 状态码。
+    """
+
+    def __init__(self, message: str, retryable: bool, code: str = "internal") -> None:
         super().__init__(message)
         self.retryable = retryable
+        self.code = code
 
 
 class LLMClient(Protocol):
@@ -63,7 +68,13 @@ _NON_RETRYABLE = (anthropic.AuthenticationError, anthropic.BadRequestError)
 
 
 def _classify(exc: Exception) -> LLMError:
-    """把 anthropic 异常归类为可重试 / 不可重试。"""
+    """把 anthropic 异常归类为可重试 / 不可重试，并映射业务码（api.md §4）。"""
+    if isinstance(exc, anthropic.AuthenticationError):
+        return LLMError(f"鉴权失败: {exc}", retryable=False, code="auth")
+    if isinstance(exc, anthropic.BadRequestError):
+        return LLMError(f"参数非法: {exc}", retryable=False, code="invalid_param")
+    if isinstance(exc, anthropic.RateLimitError):
+        return LLMError(f"限流: {exc}", retryable=True, code="rate_limited")
     if isinstance(exc, _NON_RETRYABLE):
         return LLMError(f"不可重试错误: {exc}", retryable=False)
     return LLMError(f"可重试错误: {exc}", retryable=True)
@@ -100,19 +111,24 @@ class AnthropicClient:
         self.timeout = timeout
         self.max_retries = max_retries
         self.circuit_breaker = circuit_breaker or CircuitBreaker()
+        # 观测埋点（observability.md §7.1 token/latency 计量）
+        self.total_tokens = 0
+        self.total_calls = 0
+        self.latencies: list[float] = []
 
     def _retry_sleep(self, attempt: int) -> None:
         time.sleep(2 ** attempt)  # 指数退避 1s / 2s / 4s
 
     def complete(self, messages: list[ChatMessage], max_tokens: int = 1024) -> str:
         if not self.circuit_breaker.allow():
-            raise LLMError("熔断中，请求被拒绝", retryable=False)
+            raise LLMError("熔断中，请求被拒绝", retryable=False, code="circuit_open")
         # 提取 system 消息：anthropic 用独立 system 参数，不混入 messages
         # （system 指令与不可信数据隔离，见 security.md 边界一）
         system_parts = [m["content"] for m in messages if m["role"] == "system"]
         rest = [m for m in messages if m["role"] != "system"]
         last: Exception | None = None
         for attempt in range(self.max_retries):
+            started = time.monotonic()
             try:
                 kwargs: dict[str, Any] = {
                     "model": self.model,
@@ -125,6 +141,7 @@ class AnthropicClient:
                     kwargs["system"] = "\n\n".join(system_parts)
                 resp = self._client.messages.create(**kwargs)
                 self.circuit_breaker.record_success()
+                self._record_usage(resp, started)
                 return "".join(b.text for b in resp.content if b.type == "text")
             except Exception as exc:  # noqa: BLE001 - 统一归类
                 err = _classify(exc)
@@ -136,6 +153,15 @@ class AnthropicClient:
                     self._retry_sleep(attempt)
         self.circuit_breaker.record_failure()
         raise LLMError(f"重试 {self.max_retries} 次后仍失败: {last}", retryable=True)
+
+    def _record_usage(self, resp, started: float) -> None:
+        """埋点：累计 token 与调用时延（observability.md §7.1）。"""
+        self.total_calls += 1
+        self.latencies.append(time.monotonic() - started)
+        usage = getattr(resp, "usage", None)
+        if usage is not None:
+            self.total_tokens += getattr(usage, "input_tokens", 0) or 0
+            self.total_tokens += getattr(usage, "output_tokens", 0) or 0
 
     def complete_structured(
         self,
@@ -191,4 +217,5 @@ def from_settings(settings) -> "AnthropicClient":
         api_key=settings.llm.api_key,
         model=settings.llm.model,
         base_url=settings.llm.base_url,
+        timeout=getattr(settings, "llm_timeout_s", 60.0),
     )

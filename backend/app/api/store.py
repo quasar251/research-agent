@@ -20,14 +20,24 @@ class TaskStore:
         self._conn.execute(
             """
             CREATE TABLE IF NOT EXISTS tasks (
-                run_id  TEXT PRIMARY KEY,
-                status  TEXT NOT NULL,
-                intent  TEXT NOT NULL DEFAULT '',
-                report  TEXT,
-                metrics TEXT
+                run_id     TEXT PRIMARY KEY,
+                status     TEXT NOT NULL,
+                intent     TEXT NOT NULL DEFAULT '',
+                report     TEXT,
+                metrics    TEXT,
+                created_at TEXT NOT NULL DEFAULT '',
+                error      TEXT
             )
             """
         )
+        # 兼容旧库：增量迁移补齐新增列（state.md §3.3）
+        for col, decl in (
+            ("created_at", "TEXT NOT NULL DEFAULT ''"),
+            ("error", "TEXT"),
+        ):
+            cols = {r[1] for r in self._conn.execute("PRAGMA table_info(tasks)")}
+            if col not in cols:
+                self._conn.execute(f"ALTER TABLE tasks ADD COLUMN {col} {decl}")
         self._conn.execute(
             """
             CREATE TABLE IF NOT EXISTS idempotency (
@@ -36,11 +46,15 @@ class TaskStore:
             )
             """
         )
+        self._conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status)"
+        )
         self._conn.commit()
 
     def create(self, run_id: str, intent: str) -> None:
         self._conn.execute(
-            "INSERT OR REPLACE INTO tasks (run_id, status, intent) VALUES (?, 'pending', ?)",
+            "INSERT OR REPLACE INTO tasks (run_id, status, intent, created_at) "
+            "VALUES (?, 'pending', ?, datetime('now'))",
             (run_id, intent),
         )
         self._conn.commit()
@@ -64,11 +78,18 @@ class TaskStore:
         )
         self._conn.commit()
 
-    def update(self, run_id: str, status: str, result: dict | None = None) -> None:
-        """更新任务状态；result 非空时派生 report + metrics 落库。"""
+    def update(
+        self,
+        run_id: str,
+        status: str,
+        result: dict | None = None,
+        error: str | None = None,
+    ) -> None:
+        """更新任务状态；result 非空时派生 report + metrics 落库；error 记录失败业务码。"""
         if result is None:
             self._conn.execute(
-                "UPDATE tasks SET status=? WHERE run_id=?", (status, run_id)
+                "UPDATE tasks SET status=?, error=? WHERE run_id=?",
+                (status, error, run_id),
             )
         else:
             report = result.get("report")
@@ -88,7 +109,8 @@ class TaskStore:
 
     def get(self, run_id: str) -> dict[str, Any] | None:
         row = self._conn.execute(
-            "SELECT run_id, status, intent, report, metrics FROM tasks WHERE run_id=?",
+            "SELECT run_id, status, intent, report, metrics, created_at, error "
+            "FROM tasks WHERE run_id=?",
             (run_id,),
         ).fetchone()
         if row is None:
@@ -99,4 +121,27 @@ class TaskStore:
             "intent": row[2],
             "report": json.loads(row[3]) if row[3] else None,
             "metrics": json.loads(row[4]) if row[4] else None,
+            "created_at": row[5],
+            "error": row[6],
         }
+
+    def list(self, limit: int = 20, cursor: str | None = None) -> dict:
+        """分页列出任务（会话历史 API，api.md §5 分页 + api-integration.md §7）。"""
+        rows = self._conn.execute(
+            """
+            SELECT run_id, status, intent, created_at, error
+            FROM tasks
+            WHERE (? = '' OR run_id > ?)
+            ORDER BY created_at DESC, run_id DESC
+            LIMIT ?
+            """,
+            (cursor or "", cursor or "", limit + 1),
+        ).fetchall()
+        has_more = len(rows) > limit
+        rows = rows[:limit]
+        items = [
+            {"run_id": r[0], "status": r[1], "intent": r[2], "created_at": r[3], "error": r[4]}
+            for r in rows
+        ]
+        next_cursor = items[-1]["run_id"] if has_more and items else None
+        return {"items": items, "next_cursor": next_cursor}

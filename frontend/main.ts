@@ -1,5 +1,6 @@
 import './style.css';
-import { suggestions, type ReportDepth } from './mock';
+import { suggestions, isDataReady, type ReportDepth } from './mock';
+import { loadDemoData } from './demoApi';
 import {
   esc,
   state,
@@ -297,10 +298,25 @@ applySidebar(sidebarPinned);
 setSidebarRefresh(renderSidebar);
 setTasksRefresh(renderSidebar);
 const chat = document.getElementById('chat')!;
-chat.innerHTML = welcomeHtml(suggestions);
-floatComposer();
-if (!loadConvs()) seedConvs();
-seedTasks();
-bind();
-renderSidebar();
-setStatus('待命中', 'idle');
+
+/** 数据由 Python 后端提供：先拉取，再渲染界面（未就绪时给出明确提示） */
+async function boot(): Promise<void> {
+  chat.innerHTML = '<div class="boot-loading">正在从后端加载演示数据…</div>';
+  await loadDemoData();
+
+  if (!isDataReady()) {
+    chat.innerHTML = '<div class="boot-error">后端未就绪：请运行 <code>uv run python backend/serve_demo.py</code> 后刷新页面。</div>';
+    setStatus('后端未连接', 'idle');
+    return;
+  }
+
+  chat.innerHTML = welcomeHtml(suggestions);
+  floatComposer();
+  if (!loadConvs()) seedConvs();
+  seedTasks();
+  bind();
+  renderSidebar();
+  setStatus('待命中', 'idle');
+}
+
+void boot();

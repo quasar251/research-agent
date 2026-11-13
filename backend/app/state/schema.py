@@ -264,3 +264,4 @@ class ReportModel(BaseModel):
     citations: list[ReportCitation] = Field(default_factory=list)
     sections: list[ReportSection] = Field(default_factory=list)
     coverage: float = 0.0
+    partial: bool = False  # 降级产出时置 True（reliability.md §2 部分结果显式标注）

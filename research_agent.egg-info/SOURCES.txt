@@ -2,6 +2,8 @@ README.md
 pyproject.toml
 backend/__init__.py
 backend/live_check.py
+backend/serve.py
+backend/serve_demo.py
 backend/app/__init__.py
 backend/app/config.py
 backend/app/main.py
@@ -12,16 +14,20 @@ backend/app/agents/lead.py
 backend/app/agents/synthesizer.py
 backend/app/agents/verifier.py
 backend/app/api/__init__.py
+backend/app/api/demo.py
 backend/app/api/routes.py
 backend/app/api/sse.py
 backend/app/api/store.py
 backend/app/context/__init__.py
 backend/app/context/budget.py
 backend/app/context/compiler.py
+backend/app/context/externalize.py
 backend/app/context/snapshot.py
 backend/app/llm/__init__.py
 backend/app/llm/circuit_breaker.py
 backend/app/llm/client.py
+backend/app/llm/mock.py
+backend/app/llm/router.py
 backend/app/memory/__init__.py
 backend/app/memory/distill.py
 backend/app/memory/embedding.py
@@ -40,6 +46,7 @@ backend/app/security/gate.py
 backend/app/security/injection.py
 backend/app/security/privacy.py
 backend/app/skill/__init__.py
+backend/app/skill/catalog.py
 backend/app/skill/loader.py
 backend/app/skill/registry.py
 backend/app/state/__init__.py
@@ -48,6 +55,7 @@ backend/app/state/graph.py
 backend/app/state/schema.py
 backend/app/tools/__init__.py
 backend/app/tools/registry.py
+backend/app/tools/search.py
 eval/__init__.py
 eval/factuality.py
 eval/process.py
@@ -59,6 +67,7 @@ research_agent.egg-info/requires.txt
 research_agent.egg-info/top_level.txt
 test/__init__.py
 test/conftest.py
+test/offline_helpers.py
 test/test_api.py
 test/test_checkpoint.py
 test/test_circuit_breaker.py
@@ -67,9 +76,11 @@ test/test_context_budget.py
 test/test_crosscutting.py
 test/test_eval.py
 test/test_flow.py
+test/test_hitl.py
 test/test_llm.py
 test/test_memory_retrieval.py
 test/test_observability.py
+test/test_offline_e2e.py
 test/test_orchestration.py
 test/test_runtime.py
 test/test_state.py

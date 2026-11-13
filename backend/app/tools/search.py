@@ -12,8 +12,13 @@ from typing import Protocol
 
 import httpx
 
+from .errors import ToolErrorCode
+
 # 搜索工具的权限名，由 PermissionGate 判定（security.md §4）
 SEARCH_PERMISSION = "search"
+
+# 单次工具调用默认超时 30s（reliability.md §3 / tool.md §6.2）
+_DEFAULT_TOOL_TIMEOUT = 30.0
 
 
 @dataclass
@@ -55,20 +60,38 @@ def _strip_tags(text: str) -> str:
 
 
 class DuckDuckGoSearch:
-    """DuckDuckGo HTML 接口搜索。失败降级返回空列表，不抛异常。"""
+    """DuckDuckGo HTML 接口搜索。失败降级返回空列表，不抛异常。
+
+    last_error 记录结构化错误码（超时 / 限流 / 网络等），调用方据此分类（tool.md §6.2）。
+    """
+
+    def __init__(self, timeout: float = _DEFAULT_TOOL_TIMEOUT) -> None:
+        self.timeout = timeout
+        self.last_error: ToolErrorCode | None = None
 
     def search(self, query: str, max_results: int = 5) -> list[SearchResult]:
+        self.last_error = None
         try:
             resp = httpx.get(
                 _DDGS_ENDPOINT,
                 params={"q": query},
                 headers={"User-Agent": _UA},
-                timeout=10.0,
+                timeout=self.timeout,
                 follow_redirects=True,
             )
             resp.raise_for_status()
             html = resp.text
+        except httpx.TimeoutException:
+            self.last_error = ToolErrorCode.TIMEOUT
+            return []
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code == 429:
+                self.last_error = ToolErrorCode.RATE_LIMITED
+            else:
+                self.last_error = ToolErrorCode.NETWORK
+            return []
         except Exception:  # noqa: BLE001 - 网络/解析失败一律降级为空结果
+            self.last_error = ToolErrorCode.NETWORK
             return []
 
         results: list[SearchResult] = []

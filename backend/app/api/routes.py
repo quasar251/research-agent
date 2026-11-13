@@ -12,6 +12,28 @@ from .store import TaskStore
 
 router = APIRouter()
 
+# LLM 业务码 → HTTP 状态码 + 业务码（api.md §4）
+_LLM_ERROR_HTTP = {
+    "auth": 401,
+    "rate_limited": 429,
+    "circuit_open": 503,
+    "invalid_param": 400,
+    "internal": 500,
+}
+_LLM_ERROR_CODE = {
+    "auth": "AUTH_FAILED",
+    "rate_limited": "RATE_LIMITED",
+    "circuit_open": "CIRCUIT_OPEN",
+    "invalid_param": "INVALID_PARAM",
+    "internal": "INTERNAL",
+}
+
+
+def _raise_llm(exc: LLMError) -> "HTTPException":
+    """把 LLMError 映射为结构化 HTTPException（api.md §4）。"""
+    status = _LLM_ERROR_HTTP.get(exc.code, 500)
+    return HTTPException(status_code=status, detail=_LLM_ERROR_CODE.get(exc.code, "INTERNAL"))
+
 
 class ResearchRequest(BaseModel):
     intent: str
@@ -43,8 +65,11 @@ async def _run_task(runtime, store: TaskStore, run_id: str, intent: str, depth: 
             store.update(run_id, "waiting_approval")
         else:
             store.update(run_id, "completed", result)
+    except LLMError as exc:
+        # 记录业务码，供 GET 返回结构化错误（api.md §4）
+        store.update(run_id, "failed", error=exc.code)
     except Exception:  # noqa: BLE001 - 失败态
-        store.update(run_id, "failed")
+        store.update(run_id, "failed", error="internal")
 
 
 @router.post("/research")
@@ -78,6 +103,14 @@ async def create_research(
     return {"run_id": run_id, "status": "pending"}
 
 
+@router.get("/research")
+async def list_research(
+    request: Request, limit: int = 20, cursor: str | None = None
+):
+    """会话/历史列表（api-integration.md §7），统一 limit / cursor 分页（api.md §5）。"""
+    return _task_store(request).list(limit=limit, cursor=cursor)
+
+
 @router.get("/research/{run_id}")
 async def get_research(run_id: str, request: Request):
     """查询任务状态与结果。waiting_approval 时额外返回 approval_hint（api.md §3.2）。"""
@@ -88,6 +121,8 @@ async def get_research(run_id: str, request: Request):
         resp = {"run_id": run_id, "status": task["status"]}
         if task["status"] == "waiting_approval":
             resp["approval_hint"] = "align"
+        if task["status"] == "failed" and task.get("error"):
+            resp["error"] = _LLM_ERROR_CODE.get(task["error"], "INTERNAL")
         return resp
     return {
         "run_id": run_id,
@@ -114,9 +149,12 @@ async def research_action(run_id: str, req: ActionRequest, request: Request):
     if decision not in {"confirm", "retry"}:
         raise HTTPException(status_code=400, detail="INVALID_PARAM")
 
-    result = await asyncio.to_thread(
-        lambda: request.app.state.runtime.resume(run_id, decision, feedback=req.feedback)
-    )
+    try:
+        result = await asyncio.to_thread(
+            lambda: request.app.state.runtime.resume(run_id, decision, feedback=req.feedback)
+        )
+    except LLMError as exc:
+        raise _raise_llm(exc)
     if result.get("__interrupt__"):
         store.update(run_id, "waiting_approval")
     else:

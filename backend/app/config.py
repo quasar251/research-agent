@@ -45,6 +45,8 @@ class Settings:
     embedding: EmbeddingConfig
     db_path: str = "checkpoints.sqlite"
     max_tokens: int = 1024
+    llm_timeout_s: float = 60.0    # reliability.md §2 单次 complete 默认 60s
+    task_timeout_s: float = 1800.0  # reliability.md §5 任务级硬超时默认 30 分钟
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -56,8 +58,11 @@ class Settings:
                     or os.environ.get("BSAE_URL")
                     or "https://api.anthropic.com"
                 ),
-                api_key=os.environ.get("API_KEY", ""),
-                model=os.environ.get("MODEL_ID", "claude-sonnet-4-5"),
+                # 兼容 operations.md §2 的 ANTHROPIC_API_KEY 与 api-integration.md 的 API_KEY
+                api_key=os.environ.get("API_KEY")
+                or os.environ.get("ANTHROPIC_API_KEY", ""),
+                model=os.environ.get("MODEL_ID")
+                or os.environ.get("MODEL", "claude-sonnet-4-5"),
             ),
             embedding=EmbeddingConfig(
                 provider=os.environ.get("EMBEDDING_PROVIDER", ""),
@@ -66,4 +71,6 @@ class Settings:
                 model=os.environ.get("EMBEDDING_MODEL", ""),
             ),
             db_path=os.environ.get("DB_PATH", "checkpoints.sqlite"),
+            llm_timeout_s=float(os.environ.get("LLM_TIMEOUT_S", "60")),
+            task_timeout_s=float(os.environ.get("TASK_TIMEOUT_S", "1800")),
         )

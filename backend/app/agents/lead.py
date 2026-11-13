@@ -98,18 +98,29 @@ def _build_from_plan(
 
 
 def make_lead_node(
-    llm: LLMClient, skill_registry: SkillRegistry | None = None
+    llm: LLMClient,
+    skill_registry: SkillRegistry | None = None,
+    core_memory: str = "",
+    retriever: "Callable[[str], str] | None" = None,
 ) -> Callable[[AgentState], dict]:
     """返回 align 阶段的节点函数。流程知识由 Skill 随阶段注入（渐进式披露）。
 
     deep 模式在规划后 interrupt，等待人工 confirm / retry（HITL，见 api.md §3.4）。
+    core_memory 为常驻注入的核心记忆（memory.md §1）。
+    retriever 为跨会话记忆复用入口（orchestration.md §6）：按 intent 检索已沉淀
+    的长期记忆，返回短简报作为新任务上下文注入。
     """
 
     def node(state: AgentState) -> dict:
         # 按角色编译上下文视图（状态是事实，上下文是视图）
         view, snapshot = compile_context(AgentRole.LEAD, state)
         intent = view["intent"]
-        system_prompt = build_system_prompt(_LEAD_BASE, skill_registry, StageName.ALIGN)
+        # 跨会话复用：读已沉淀长期记忆生成短简报，作为新任务上下文（orchestration.md §6）
+        brief = retriever(intent) if retriever else ""
+        system_prompt = build_system_prompt(
+            _LEAD_BASE, skill_registry, StageName.ALIGN,
+            core_memory=core_memory + (f"\n\n# 历史调研简报\n{brief}" if brief else ""),
+        )
         hitl = state.get("depth") == "deep"
         retry_feedback = ""
 

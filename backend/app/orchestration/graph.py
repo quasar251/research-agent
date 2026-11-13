@@ -33,22 +33,28 @@ def build_graph(
     skill_registry: SkillRegistry | None = None,
     router: ModelRouter | None = None,
     gate: PermissionGate | None = None,
+    core_memory: str = "",
+    retriever=None,
 ):
     """构建四阶段调研图（含缺口重派循环）。可传入 checkpointer 支持断点续跑。
 
     模型路由（s08）：按角色解析不同档位的 client，未注入 router 时默认单模型。
     权限判定（s04）：gate 横切工具调用，未注入时跳过判定。
+    core_memory（memory.md §1）：核心记忆常驻注入到各角色 system prompt。
+    retriever（orchestration.md §6）：按 intent 检索长期记忆生成短简报，注入 align。
     """
     r = router or ModelRouter(llm)
     g = StateGraph(AgentState)
 
-    g.add_node("align", make_lead_node(r.resolve(AgentRole.LEAD), skill_registry))
+    g.add_node(
+        "align", make_lead_node(r.resolve(AgentRole.LEAD), skill_registry, core_memory, retriever)
+    )
     g.add_node(
         "collect",
-        make_collector_node(r.resolve(AgentRole.COLLECTOR), search, skill_registry, gate),
+        make_collector_node(r.resolve(AgentRole.COLLECTOR), search, skill_registry, gate, core_memory),
     )
-    g.add_node("verify", make_verifier_node(r.resolve(AgentRole.VERIFIER), skill_registry))
-    g.add_node("synthesize", make_synthesizer_node(r.resolve(AgentRole.SYNTHESIZER), skill_registry))
+    g.add_node("verify", make_verifier_node(r.resolve(AgentRole.VERIFIER), skill_registry, core_memory))
+    g.add_node("synthesize", make_synthesizer_node(r.resolve(AgentRole.SYNTHESIZER), skill_registry, core_memory))
 
     g.set_entry_point("align")
     g.add_edge("align", "collect")

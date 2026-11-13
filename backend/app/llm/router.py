@@ -41,11 +41,24 @@ class ModelRouter:
     def resolve(self, role: AgentRole) -> LLMClient:
         """返回该角色应使用的模型 client，并累计用量。
 
-        未配置对应档位时降级到 default，保证单模型场景可用。
+        - 未配置对应档位时降级到 default，保证单模型场景可用。
+        - 熔断降级（reliability.md §2）：目标档位熔断中，回退到 default（换更小/更快模型的第一步）。
         """
         tier = AGENT_TIER_MAP.get(role, ModelTier.DEFAULT)
         self._usage[tier] += 1
-        return self._clients.get(tier) or self._clients[ModelTier.DEFAULT]
+        client = self._clients.get(tier) or self._clients[ModelTier.DEFAULT]
+        if tier != ModelTier.DEFAULT and self._is_open(client):
+            fallback = self._clients.get(ModelTier.DEFAULT)
+            if fallback is not None and not self._is_open(fallback):
+                self._usage[ModelTier.DEFAULT] += 1
+                return fallback
+        return client
+
+    @staticmethod
+    def _is_open(client: LLMClient) -> bool:
+        """client 是否处于熔断 open 状态。"""
+        cb = getattr(client, "circuit_breaker", None)
+        return bool(cb) and getattr(cb, "state", "closed") == "open"
 
     def usage(self) -> dict[str, int]:
         """各档位的调用次数（供指标/审计展示路由分布）。"""

@@ -26,7 +26,12 @@ def main() -> None:
         llm = OfflineMockLLM()
         print("[serve] 无 API key，使用离线 MockLLM（演示数据）")
 
-    app = create_app(llm, checkpoint_db="checkpoints.sqlite", task_db="tasks.sqlite")
+    app = create_app(
+        llm,
+        checkpoint_db="checkpoints.sqlite",
+        task_db="tasks.sqlite",
+        task_timeout_s=settings.task_timeout_s,
+    )
 
     import uvicorn
 

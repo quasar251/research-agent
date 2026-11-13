@@ -70,6 +70,7 @@ def make_collector_node(
     search: SearchProvider | None = None,
     skill_registry: SkillRegistry | None = None,
     gate: PermissionGate | None = None,
+    core_memory: str = "",
 ) -> Callable[[AgentState], dict]:
     """返回 collect 阶段的节点函数。search 为 None 时跳过真实检索（测试可注入 mock）。"""
 
@@ -83,7 +84,9 @@ def make_collector_node(
         done: list[Subtask] = []
         errors: list[str] = []
         cell_claims: dict[tuple[str, str], list[str]] = {}
-        system_prompt = build_system_prompt(_COLLECTOR_BASE, skill_registry, StageName.COLLECT)
+        system_prompt = build_system_prompt(
+            _COLLECTOR_BASE, skill_registry, StageName.COLLECT, core_memory=core_memory
+        )
 
         for t in pending:
             # 1. 用检索工具拿真实来源（search 为 None 时跳过，便于测试注入）
